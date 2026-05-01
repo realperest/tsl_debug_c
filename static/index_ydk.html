@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tesla Video Test Lab — TVB-TD</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/jmuxer@2.0.5/dist/jmuxer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js"></script>
+
+</head>
+<body>
+    <div class="glass-bg"></div>
+    
+    <header>
+        <div class="header-content">
+            <h1 class="glow-text">Tesla Video Test Lab</h1>
+            <p class="subtitle">Bypass Technology Verification Suite</p>
+            
+            <div class="search-container">
+                <input type="text" id="search-input" placeholder="YouTube URL veya Kelime..." value="https://www.youtube.com/watch?v=D5oh2TxQwfk" autocomplete="off">
+                <button id="search-btn">KEŞFET</button>
+            </div>
+        </div>
+        
+        <div id="search-results" class="results-grid"></div>
+    </header>
+
+    <main id="panels" class="panels-grid">
+        <!-- #1 WebCodecs + Canvas 2D -->
+        <section class="panel glass-panel" id="panel-tech1">
+            <div class="panel-header">
+                <span class="tech-id">#1</span>
+                <h3>WebCodecs + Canvas 2D</h3>
+            </div>
+            <div class="status-bar">
+                <div class="leds">
+                    <span class="led" data-led="load"></span>
+                    <span class="led" data-led="decode"></span>
+                    <span class="led" data-led="render"></span>
+                </div>
+                <div class="stats">FPS: <span id="fps-tech1">--</span></div>
+            </div>
+            <div class="canvas-container">
+                <canvas id="canvas-tech1"></canvas>
+            </div>
+            <div class="panel-footer">
+                <button data-action="play" class="btn-mini btn-success">Oynat</button>
+                <button data-action="pause" class="btn-mini btn-danger">Dur</button>
+                <button data-action="reset" class="btn-mini">Sıfırla</button>
+            </div>
+        </section>
+
+        <!-- #2 WebCodecs + WebGL -->
+        <section class="panel glass-panel" id="panel-tech2">
+            <div class="panel-header">
+                <span class="tech-id">#2</span>
+                <h3>WebCodecs + WebGL</h3>
+            </div>
+            <div class="status-bar">
+                <div class="leds">
+                    <span class="led" data-led="load"></span>
+                    <span class="led" data-led="decode"></span>
+                    <span class="led" data-led="render"></span>
+                </div>
+                <div class="stats">FPS: <span id="fps-tech2">--</span></div>
+            </div>
+            <div class="canvas-container">
+                <canvas id="canvas-tech2"></canvas>
+            </div>
+            <div class="panel-footer">
+                <button data-action="play" class="btn-mini btn-success">Oynat</button>
+                <button data-action="pause" class="btn-mini btn-danger">Dur</button>
+                <button data-action="reset" class="btn-mini">Sıfırla</button>
+            </div>
+        </section>
+
+        <!-- #3 jmuxer + MSE -->
+        <section class="panel glass-panel" id="panel-tech3">
+            <div class="panel-header">
+                <span class="tech-id">#3</span>
+                <h3>jmuxer + MSE (Kontrol)</h3>
+            </div>
+            <div class="status-bar">
+                <div class="leds">
+                    <span class="led" data-led="load"></span>
+                    <span class="led" data-led="decode"></span>
+                    <span class="led" data-led="render"></span>
+                </div>
+                <div class="stats">FPS: <span id="fps-tech3">--</span></div>
+            </div>
+            <div class="canvas-container">
+                <video id="video-tech3" playsinline muted></video>
+            </div>
+            <div class="panel-footer">
+                <button data-action="play" class="btn-mini btn-success">Oynat</button>
+                <button data-action="pause" class="btn-mini btn-danger">Dur</button>
+                <button data-action="reset" class="btn-mini">Sıfırla</button>
+            </div>
+        </section>
+
+        <!-- #4 ffmpeg.wasm + Canvas -->
+        <section class="panel glass-panel" id="panel-tech4">
+            <div class="panel-header">
+                <span class="tech-id">#4</span>
+                <h3>WASM + Canvas</h3>
+            </div>
+            <div class="status-bar">
+                <div class="leds">
+                    <span class="led" data-led="load"></span>
+                    <span class="led" data-led="decode"></span>
+                    <span class="led" data-led="render"></span>
+                </div>
+                <div class="stats">FPS: <span id="fps-tech4">--</span></div>
+            </div>
+            <div class="canvas-container">
+                <canvas id="canvas-tech4"></canvas>
+            </div>
+            <div class="panel-footer">
+                <button data-action="play" class="btn-mini btn-success">Oynat</button>
+                <button data-action="pause" class="btn-mini btn-danger">Dur</button>
+                <button data-action="reset" class="btn-mini">Sıfırla</button>
+            </div>
+        </section>
+
+        <!-- #5 WebCodecs + MJPEG -->
+        <section class="panel glass-panel" id="panel-tech5">
+            <div class="panel-header">
+                <span class="tech-id">#5</span>
+                <h3>WebCodecs + MJPEG</h3>
+            </div>
+            <div class="status-bar">
+                <div class="leds">
+                    <span class="led" data-led="load"></span>
+                    <span class="led" data-led="decode"></span>
+                    <span class="led" data-led="render"></span>
+                </div>
+                <div class="stats">FPS: <span id="fps-tech5">--</span></div>
+            </div>
+            <div class="canvas-container">
+                <img id="img-tech5" alt="Streaming MJPEG">
+            </div>
+            <div class="panel-footer">
+                <button data-action="play" class="btn-mini btn-success">Oynat</button>
+                <button data-action="pause" class="btn-mini btn-danger">Dur</button>
+                <button data-action="reset" class="btn-mini">Sıfırla</button>
+            </div>
+        </section>
+    </main>
+
+    <section id="debug-panel" class="glass-panel">
+        <div class="debug-header">
+            <div class="debug-title">
+                <span class="icon">🐞</span>
+                <strong>DEBUG CONSOLE</strong>
+            </div>
+            <div class="debug-controls">
+                <label><input type="checkbox" id="auto-scroll" checked> Auto Scroll</label>
+                <label><input type="checkbox" id="send-to-server" checked> Remote Log</label>
+                <select id="debug-filter">
+                    <option value="all">Tüm Kaynaklar</option>
+                    <option value="global">Global</option>
+                    <option value="tech1">Tech 1</option>
+                    <option value="tech2">Tech 2</option>
+                    <option value="tech3">Tech 3</option>
+                    <option value="tech4">Tech 4</option>
+                    <option value="tech5">Tech 5</option>
+                </select>
+                <button id="clear-log" class="btn-mini">Temizle</button>
+            </div>
+        </div>
+        <div id="debug-log" class="nano-scroll"></div>
+    </section>
+
+    <footer class="version-footer">
+        <div id="version-list">
+            <div class="version-item current"><strong>260429.0030</strong></div>
+        </div>
+    </footer>
+
+    <script type="module" src="/static/js/main.js"></script>
+</body>
+</html>
