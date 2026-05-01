@@ -598,7 +598,7 @@ export const TechModule = {
                         bufferBar.style.width = `${pseudoPct}%`;
                     }
 
-                    if (this.frameQueue.length > this.MAX_BUFFER) await new Promise(r => setTimeout(r, 100));
+                    /* fetch'i frameQueue uzunluguna göre durdurmak ses/görüntüyü canlıda ayırır — bkz. tech1 pump notu */
                 }
             };
             pump().catch((e) => {

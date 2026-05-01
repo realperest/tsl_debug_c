@@ -610,7 +610,10 @@ export const TechModule = {
                         bufferBar.style.width = `${pseudoPct}%`;
                     }
 
-                    if (this.frameQueue.length > this.MAX_BUFFER) await new Promise(r => setTimeout(r, 100));
+                    /* ASLA burada frameQueue'ya gore fetch'i uyutmayin:
+                     * Aynı akista MSE + MP4Box varken ag durunca ses tamponundan oynamaya devam eder,
+                     * goruntu ise byte gelmedigi icin kesilir (canli/Tesla'da sık görulur).
+                     * Kuyruk sınırını yalnizca onFrame'de VideoFrame kapatarak yönet. */
                 }
             };
             pump().catch((e) => {

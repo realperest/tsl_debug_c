@@ -1192,3 +1192,53 @@ CanlÄ±ya deploy + sert yenilemeden sonra tekrar dene. HÃ¢lÃ¢ takÄ±lÄ±y
 
 repo gÃ¼ncelle
 
+
+## Assistant - 2026-05-01 22:25:24
+
+Tamam.
+
+**Commit:** `Canli goruntu kesilmesi: sesi decode kuyruguna geri cevir, sync penceresi 0.22, surum C 260501.0085`  
+**Push:** `main` â†’ `origin` (`c5d399d` â†’ `9b76328`)  
+
+**DeÄŸiÅŸen dosyalar:** `tech1-webcodecs-canvas2d.js`, `tech5-webcodecs-mjpeg-img.js`, `app.js`, `index.html`, `konusmalar/konusma01.md`
+
+
+## User - 2026-05-01 22:27:41
+
+hayÄ±r olmadÄ± hala lÃ¼tfen gerÃ§ek sebebi bul artÄ±k. aklÄ±na ilk geleni yapma ve bu problemi Ã§Ã¶z
+
+
+## Assistant - 2026-05-01 22:28:17
+
+## GerÃ§ek kÃ¶k sebep (neden yerelde yoktu, canlÄ±da vardÄ±?)
+
+`/stream` iÃ§in **tek `fetch`** ile hem MP4Box (videoyu Ã§Ä±karman) hem de (birleÅŸtirilmiÅŸ akÄ±ÅŸta) **MSEâ€™ye ses** gidiyorsu. Kodda kritik yer ÅŸuydu:
+
+```613:613:static/js/tech1-webcodecs-canvas2d.js
+```
+
+AslÄ±nda kaldÄ±rÄ±lan satÄ±r mantÄ±ÄŸÄ± ÅŸuydu: **decode sonrasÄ± kuyruk dolunca `reader.read()` hattÄ±na 100â€¯ms ara ver.**
+
+Bu ne yapÄ±yor?
+
+- **`await new Promise(..., 100)`** = â€œbir sonraki byteâ€ gelmesini ve dolayÄ±sÄ±yla **`appendBuffer`/yeni gÃ¶rÃ¼ntÃ¼ Ã¶rnekleri** Ã¼retimini sÃ¼rekli frenlemek.
+- **Ses**, MSE/SourceBufferâ€™a bir kez yazÄ±lmÄ±ÅŸ â€œileri tampondanâ€ **`audio.currentTime` ile Ã¶ylece oynamaya devam edebilir**; gÃ¶rÃ¼ntÃ¼ ise yeni veri beklediÄŸi iÃ§in **kesik kesik / takÄ±lÄ±**.
+- Yerelde sÃ¼re Ã§ok dÃ¼ÅŸÃ¼k, redraw + decode sÄ±k sÄ±k tampon dolmadan arkayÄ± boÅŸ tuttuÄŸu iÃ§in bu uyku **nadiren tetikleniyordu**; uzak Sunucu + ara proxy + daha yÃ¼ksek jitterâ€™da ise **sÄ±k sÄ±k** tetiklenip â€œher zaman kopuyormuÅŸâ€ hissini veriyordu.
+
+Yani sorun ilk bakÄ±ÅŸta â€œeÅŸitleme formÃ¼lÃ¼â€ deÄŸildi; **`video frameQueue`, `fetch` hÄ±zÄ±na yanlÄ±ÅŸlÄ±kla baÄŸlanmÄ±ÅŸtÄ±** â€” bu da birleÅŸik bir MP4 ile **Ã¶zellikle kÃ¶tÃ¼** bir tasarÄ±m hatasÄ±.
+
+## Ne yaptÄ±k?
+
+- Bu **geri baskÄ±yÄ± tamamen kaldÄ±rdÄ±m** (**YT1 + YT2**); kuyruk sÄ±nÄ±rÄ±nÄ± zaten **`onFrame` iÃ§inde** en eski `VideoFrame`â€™leri kapatma ile yapÄ±yorsun; aÄŸ bununla bloklanmayacak.
+- GÃ¶rÃ¼ntÃ¼ formatÄ±na, yt-dlp seÃ§imine, `<video>` kullanmadan Tesla senaryosu iÃ§in olan mimariye **dokunulmadÄ±**; sadece akÄ±ÅŸ pompalamasÄ± dÃ¼zeltildi.
+- Rozet: **`C 260501.0086`**.
+
+CanlÄ±ya bu sÃ¼rÃ¼mle deploy et + sert yenileme. Bunun arkasÄ± gelecek iyileÅŸtirme (gerekirse) **decode giriÅŸi** iÃ§in seÃ§ici sÄ±kÄ±ÅŸtÄ±rma olurdu; ÅŸu an Ã¶nce doÄŸru kÃ¶k nedeni temizlemek gerekiyordu.
+
+Ä°stersen sÄ±radaki adÄ±mda **`git push`** da yazdÄ±rÄ±rÄ±m (TÃ¼rkÃ§e commit mesajÄ±yla).
+
+
+## User - 2026-05-01 22:31:44
+
+repo
+
