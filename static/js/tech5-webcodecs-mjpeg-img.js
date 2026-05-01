@@ -39,6 +39,15 @@ export const TechModule = {
     _spinnerUntilPrimed: false,
     _surfacePaintedOnce: false,
 
+    _fallbackAudioUrl: null,
+    _unifiedAv: false,
+    _mediaSource: null,
+    _mseObjectUrl: null,
+    _audioSourceBuffer: null,
+    _mseAudioMime: null,
+    _mseQueue: [],
+    _msePumpFinished: false,
+
     // Buffer Logic
     frameQueue: [],
     _isBuffering: false,
@@ -141,6 +150,116 @@ export const TechModule = {
         if (this._surfacePaintedOnce) return;
         this._surfacePaintedOnce = true;
         this._syncStageOverlay();
+    },
+
+    _hardTeardownUnifiedMse() {
+        this._msePumpFinished = false;
+        this._mseAudioMime = null;
+        this._mseQueue = [];
+        this._audioSourceBuffer = null;
+        if (this._mediaSource) {
+            try {
+                if (this._mediaSource.readyState === 'open') {
+                    this._mediaSource.endOfStream();
+                }
+            } catch (e) {}
+            this._mediaSource = null;
+        }
+        if (this._mseObjectUrl) {
+            try {
+                URL.revokeObjectURL(this._mseObjectUrl);
+            } catch (e2) {}
+            this._mseObjectUrl = null;
+        }
+        this._unifiedAv = false;
+    },
+
+    _beginUnifiedMp4Audio(info) {
+        this._fallbackAudioUrl = (info.audio && info.audio.url_path) ? info.audio.url_path : '';
+        try {
+            const ms = new MediaSource();
+            this._mediaSource = ms;
+            this._mseObjectUrl = URL.createObjectURL(ms);
+            this.audio.src = this._mseObjectUrl;
+            this.audio.load();
+            ms.addEventListener('sourceopen', () => {
+                this._attemptMseSourceBufferAttach();
+            });
+        } catch (e) {
+            log('warn', this.id, `MediaSource: ${e?.message || e}`);
+            this._fallbackToSeparateAudioTrack();
+        }
+    },
+
+    _fallbackToSeparateAudioTrack() {
+        const url = this._fallbackAudioUrl;
+        this._hardTeardownUnifiedMse();
+        if (url) {
+            try {
+                this.audio.pause();
+                this.audio.src = url;
+                this.audio.load();
+            } catch (e) {
+                log('warn', this.id, `Ses fallback: ${e?.message || e}`);
+            }
+        }
+    },
+
+    _attemptMseSourceBufferAttach() {
+        if (!this._unifiedAv || !this._mediaSource) return;
+        if (this._mediaSource.readyState !== 'open') return;
+        if (this._audioSourceBuffer || !this._mseAudioMime) return;
+        try {
+            this._audioSourceBuffer = this._mediaSource.addSourceBuffer(this._mseAudioMime);
+        } catch (e) {
+            log('warn', this.id, `addSourceBuffer: ${e?.message || e}`);
+            this._fallbackToSeparateAudioTrack();
+            return;
+        }
+        this._pumpMseAppend();
+    },
+
+    _queueMseBytesFromReadable(value) {
+        if (!this._unifiedAv || !value) return;
+        const u8 = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+        this._mseQueue.push(u8);
+        if (this._audioSourceBuffer) this._pumpMseAppend();
+    },
+
+    _pumpMseAppend() {
+        const sb = this._audioSourceBuffer;
+        if (!sb || !this._unifiedAv) return;
+
+        const step = () => {
+            try {
+                if (!this._audioSourceBuffer || sb !== this._audioSourceBuffer) return;
+
+                if (sb.updating) {
+                    sb.addEventListener('updateend', step, { once: true });
+                    return;
+                }
+                if (this._mseQueue.length === 0) {
+                    if (this._msePumpFinished && this._mediaSource && this._mediaSource.readyState === 'open') {
+                        try {
+                            this._mediaSource.endOfStream();
+                        } catch (eosErr) {}
+                    }
+                    return;
+                }
+                const chunk = this._mseQueue.shift();
+                sb.appendBuffer(chunk);
+                sb.addEventListener('updateend', step, { once: true });
+            } catch (err) {
+                log('error', this.id, `MSE append: ${err?.message || err}`);
+                this._fallbackToSeparateAudioTrack();
+            }
+        };
+        step();
+    },
+
+    _finalizeMseOnPumpDone() {
+        this._msePumpFinished = true;
+        this._pumpMseAppend();
     },
 
     _computeResumeAudioSyncTime(frameTsSec) {
@@ -364,6 +483,8 @@ export const TechModule = {
         if (this._progressRaf) { cancelAnimationFrame(this._progressRaf); this._progressRaf = null; }
         this.audio.pause();
         this.audio.src = '';
+        this._fallbackAudioUrl = null;
+        this._hardTeardownUnifiedMse();
         if (this.decoder) { try { this.decoder.close(); } catch(e) {} this.decoder = null; }
         if (this.mp4boxfile) { try { this.mp4boxfile.flush(); } catch(e) {} this.mp4boxfile = null; }
         this._syncStageOverlay();
@@ -374,7 +495,19 @@ export const TechModule = {
         this._spinnerUntilPrimed = true;
         this._ensureStageOverlay();
         this._syncStageOverlay();
-        if (info.audio && info.audio.url_path) {
+        this._msePumpFinished = false;
+        this._mseQueue = [];
+        const unified = Boolean(info.unified_av_stream);
+        if (
+            unified
+            && typeof MediaSource !== 'undefined'
+            && typeof MediaSource.isTypeSupported === 'function'
+            && MediaSource.isTypeSupported('audio/mp4; codecs="mp4a.40.2"')
+        ) {
+            this._unifiedAv = true;
+            this._beginUnifiedMp4Audio(info);
+        } else if (info.audio && info.audio.url_path) {
+            this._unifiedAv = false;
             this.audio.src = info.audio.url_path;
             this.audio.load();
         }
@@ -396,6 +529,18 @@ export const TechModule = {
                 });
                 this.decoder.configure(config);
                 this.isConfigured = true;
+                if (this._unifiedAv) {
+                    const ats = readyInfo.audioTracks || [];
+                    if (ats[0]) {
+                        const rawCodec = (ats[0].codec || 'mp4a.40.2').trim();
+                        const codec = /^[a-zA-Z0-9.]+$/.test(rawCodec) ? rawCodec : 'mp4a.40.2';
+                        this._mseAudioMime = `audio/mp4; codecs="${codec}"`;
+                    } else {
+                        log('warn', this.id, 'Birlesik akista ses izi yok; ayri ses baglantisi.');
+                        this._fallbackToSeparateAudioTrack();
+                    }
+                    this._attemptMseSourceBufferAttach();
+                }
                 for (const s of this.pendingSamples) this.sendSample(s);
                 this.pendingSamples = [];
                 const m = this.mp4boxfile.setExtractionConfig ? 'setExtractionConfig' : 'setExtractionOptions';
@@ -417,12 +562,17 @@ export const TechModule = {
             const pump = async () => {
                 while (true) {
                     const { value, done } = await reader.read();
-                    if (done) { this.mp4boxfile.flush(); break; }
-                    const buf = value.buffer;
+                    if (done) {
+                        this.mp4boxfile.flush();
+                        if (this._unifiedAv) this._finalizeMseOnPumpDone();
+                        break;
+                    }
+                    const buf = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
                     buf.fileStart = offset;
                     offset += buf.byteLength;
                     this.mp4boxfile.appendBuffer(buf);
-                    
+                    if (this._unifiedAv) this._queueMseBytesFromReadable(value);
+
                     if (totalBytes > 0 && bufferBar) {
                         const pct = (offset / totalBytes) * 100;
                         bufferBar.style.width = `${pct}%`;

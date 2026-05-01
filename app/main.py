@@ -1,10 +1,28 @@
 import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
+
+
+class StreamPassThroughGZipMiddleware:
+    """/stream çıktısı tampon sıkıştırmayı atlar (video/ses yayını için gecikme riskini düşürür)."""
+
+    def __init__(self, app: ASGIApp, minimum_size: int = 1024, compresslevel: int = 5) -> None:
+        self.inner = app
+        self.gzip_stack = GZipMiddleware(app, minimum_size=minimum_size, compresslevel=compresslevel)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope.get("type") == "http" and str(scope.get("path") or "").startswith("/stream"):
+            await self.inner(scope, receive, send)
+            return
+        await self.gzip_stack(scope, receive, send)
+
+
 from redis.asyncio import Redis
 
 from app.config import settings
@@ -35,7 +53,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(GZipMiddleware, minimum_size=1024)
+app.add_middleware(StreamPassThroughGZipMiddleware, minimum_size=1024)
 
 app.add_middleware(
     CORSMiddleware,

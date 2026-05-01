@@ -26,9 +26,13 @@ async def extract_endpoint(video_id: str, request: Request):
     if not info:
         raise HTTPException(status_code=404, detail="video not found")
     token = await store_extraction(request.app.state.redis, info)
+    vu = info["video"].get("url") or ""
+    au = info.get("audio") and info["audio"].get("url") or ""
+    unified = bool(vu and au and vu == au)
     return {
         "token": token,
         "title": info.get('title'),
+        "unified_av_stream": unified,
         "video": {"url_path": f"/stream/{token}/video", "codec": info['video']['codec']},
         "audio": {"url_path": f"/stream/{token}/audio", "codec": info['audio']['codec']}
     }

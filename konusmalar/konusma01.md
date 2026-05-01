@@ -1028,3 +1028,124 @@ Bundan sonra yerelde deÄŸiÅŸiklik yaptÄ±ÄŸÄ±nda eÅŸitlemek iÃ§in:
 
 repoyu push et
 
+
+## Assistant - 2026-05-01 21:43:41
+
+Tamam.
+
+`konusmalar/konusma01.md` dosyasÄ±ndaki yerel deÄŸiÅŸiklikleri **"konusma01.md guncelleme"** mesajÄ±yla commitâ€™ledim ve **`main`** dalÄ±nÄ± `origin`e gÃ¶nderdim (`fdd7134` â†’ `e989633`).
+
+Åu an dal **uzak ile aynÄ±**. BaÅŸka yerel deÄŸiÅŸiklik yoksa ekstra bir ÅŸey yapmana gerek yok.
+
+
+## User - 2026-05-01 21:55:45
+
+son push ettiÄŸin aÃ§Ä±klamasÄ± neydi
+
+
+## Assistant - 2026-05-01 21:55:49
+
+Son pushâ€™taki commit mesajÄ± ÅŸuydu: **`konusma01.md guncelleme`**.
+
+
+## User - 2026-05-01 22:03:33
+
+canlÄ±ya alÄ±nca nedense pause resume ayarlarÄ±mÄ±z bozuldu neden olmuÅŸ olabilir bu. coodify da yayÄ±nladÄ±m ama localdeki gibi deÄŸil pause resume hatta videonun ilk aÃ§Ä±lmasÄ±nda bile ses ve gÃ¶rÃ¼ntÃ¼ eÅŸleÅŸmesi yapmadan baÅŸlÄ±yor sanki. neden olabilir bu problem
+
+
+## Assistant - 2026-05-01 22:04:04
+
+Ekranda **canlÄ± adres** Ã¼zerinden aÃ§tÄ±ÄŸÄ±nda gÃ¶rÃ¼nenden fark, bÃ¼yÃ¼k ihtimalle **tek yazÄ±lÄ±m mantÄ±ÄŸÄ±ndan deÄŸil, aÄŸ katmanÄ±ndan ve paralel iki indirmeden** geliyor.
+
+## 1) AynÄ± dosyayÄ± iki kez, iki farklÄ± kanaldan kullanÄ±yorsunuz
+
+`ytdlp_helper.extract` Ã§Ä±ktÄ±sÄ±nda **`video.url` ile `audio.url` aynÄ±** (birleÅŸik MP4 stream). Ã–nyÃ¼zde ise:
+
+- GÃ¶rÃ¼ntÃ¼: **`fetch`** ile `/stream/.../video` â†’ MP4Box + WebCodecs  
+- Ses: `<audio>` ile **`audio.src` = `/stream/.../audio`**
+
+Yani tarayÄ±cÄ± **aynÄ± kaynaÄŸÄ±n iki ayrÄ± HTTP baÄŸlantÄ±sÄ±** Ã¼zerinden kopyasÄ±nÄ± Ã§ekiyor. **Yerelde** sunucuya gecikme milisaniye seviyesinde olduÄŸu iÃ§in iki akÄ±ÅŸ neredeyse â€œaynÄ± tempodaâ€ ilerleyip senkron/pause-resume toleranslÄ± gÃ¶rÃ¼nÃ¼r; **canlÄ±da** (Coolify + sslip Ã¼zerinden) her bacak iÃ§in **paket sÄ±rasÄ±, buffer dolma sÃ¼resi, kesinti ve yeniden baÄŸlanma** farklÄ±laÅŸÄ±r. Bu doÄŸrudan â€œbaÅŸlangÄ±Ã§ta sesâ€“gÃ¶rÃ¼ntÃ¼ uyumsuzuâ€ ve â€œpause/resumeâ€™un tutarsÄ±z hissedilmesiâ€ Ã¼retir.
+
+## 2) Coolifyâ€™un Ã¶nÃ¼ndeki proxy (Traefik vb.)
+
+Edge tarafÄ±nda **yan tampon (buffering)**, **timeout**, ** baÄŸlantÄ± yeniden kullanÄ±mÄ±**, HTTP/2 davranÄ±ÅŸÄ± yerel tek makineye gÃ¶re farklÄ± olur. Pause/resume sÄ±rasÄ±nda biri zamanÄ±nda veri beklerken diÄŸeri gecikebilir; senkron algoritanÄ±z **ikisi birlikte ilerliyor muyor** gÃ¶rdÃ¼ÄŸÃ¼nde daha Ã§ok zarar gÃ¶rÃ¼r.
+
+## 3) Gecikme + senkron eÅŸikleri
+
+Kod tarafÄ±nda kare atlama / `currentTime` hizasÄ± gibi davranÄ±ÅŸlar zamanlamaya baÄŸlÄ±. **Uzun RTT ve dalgalÄ± bant geniÅŸliÄŸi** â€œyerelde Ã§alÄ±ÅŸÄ±yorduâ€ eÅŸiklerinin canlÄ±da sÄ±k sÄ±k yanlÄ±ÅŸ tarafa dÃ¼ÅŸmesine yol aÃ§ar; Ã¶zellikle **ilk buffered keyframe sesâ€™ten sonra** gelebilir.
+
+## 4) Ä°stemci Ã–nbelleÄŸi / sÃ¼rÃ¼m
+
+CanlÄ±da **eski bir `app.js`** veya CDN Ã¶nbelleÄŸi de â€œpause dÃ¼zeltmesi yapÄ±lmÄ±ÅŸ ama sahada baÅŸka kod varâ€ hissini verebilir. Ekranda `C 260501.0883` gibi gÃ¶rÃ¼nÃ¼yorsa, yerelde beklediÄŸiniz rozetteki numara ile **birebir aynÄ± mÄ±** diye bakmak iÅŸe yarar (yanlÄ±ÅŸ sÃ¼rÃ¼m = yanÄ±ltÄ±cÄ± fark).
+
+## 5) Sunucu ortamÄ±nÄ±n kendisi (yt-dlp, IP)
+
+CanlÄ± kutudaki **yt-dlp sÃ¼rÃ¼mÃ¼ / hangi codec veya redirected URL Ã§Ä±ktÄ±ÄŸÄ±** ile yerelde farklÄ± sonuÃ§ (farklÄ± keyframe sÄ±klÄ±ÄŸÄ± vb.) seÃ§ilebilir; bu da Ã¶zellikle **seek/resume sonrasÄ±** hissi deÄŸiÅŸtirir.
+
+---
+
+**Ã–zet:** En tutarlÄ± aÃ§Ä±klama, **aynÄ± iÃ§eriÄŸin ikiye bÃ¶lÃ¼nmeden paralel iki stream olarak**, artÄ± Ã¼zerine **internet + reverse proxy**, yerelde olmayan zamanlama farklarÄ± Ã¼retmesi ve mevcut A/V ile pause/resume mantÄ±ÄŸÄ±nÄ±n buna daha hassas olmasÄ±dÄ±r. Bunu doÄŸrulamak iÃ§in tek teknik doÄŸruluk: sorun Ã§Ä±karken tarayÄ±cÄ± aÄŸÄ±nda **`/video` ve `/audio` isteklerinin sÄ±rasÄ±**, **Range** kullanÄ±mÄ± ve her iki kanalda **aynÄ± anda veri gelip gelmediÄŸi** Ã¼zerinden bakmak (sadece okuma/teÅŸhis; sen â€œnedenâ€ diye sorduÄŸun iÃ§in burada kod deÄŸiÅŸikliÄŸi Ã¶nermiyorum; istersen bir sonraki mesajÄ±nda â€œuygula / dÃ¼zeltâ€ dersen o zaman somut kod/servis tarafÄ±na geÃ§ilebilir).
+
+
+## User - 2026-05-01 22:05:06
+
+uygula dÃ¼zelt
+
+
+## Assistant - 2026-05-01 22:08:14
+
+Ã–zet:
+
+## Ne yaptÄ±k?
+
+### 1. Tek baÄŸlantÄ±lÄ± ses (MSE + aynÄ± `fetch`)
+`/api/extract` cevabÄ±na **`unified_av_stream: true|false`** eklendi (YouTube kaynaÄŸÄ±nda `video.url` ile `audio.url` aynÄ±ysa `true`).  
+
+**YT1** ve **YT2** iÃ§in bu bayrak aktifken:
+- Ses artÄ±k **ayrÄ± `/stream/.../audio` isteÄŸiyle deÄŸil**, videoyla **aynÄ± `fetch`** akÄ±ÅŸÄ±nÄ±n kopyalarÄ±yla **MediaSource/SourceBuffer**â€™a yazÄ±lÄ±yor.
+- BÃ¶ylece canlÄ± ortamda **iki paralel HTTP hattÄ±ndan** doÄŸan zaman kaymasÄ± hedef olarak kalkÄ±yor; pause/resume ve baÅŸlangÄ±Ã§ta A/V daha tutarlÄ± olmalÄ±.
+
+MSE oluÅŸturulamazsa (`MediaSource`, codec, vs.) kod **otomatik olarak** eski davranÄ±ÅŸa dÃ¼ÅŸÃ¼yor: **`audio.src = /audio`**.
+
+### 2. Backend: `/stream` iÃ§in GZip yok  
+`StreamPassThroughGZipMiddleware`: **`/stream` altÄ± sÄ±kÄ±ÅŸtÄ±rÄ±lmÄ±yor**, diÄŸer yanÄ±tlar GZip ile devam ediyor (stream tarafÄ±nda ek tampon/tekrarlama riski azalÄ±r).
+
+### 3. SÃ¼rÃ¼m rozeti  
+**`C 260501.0084`** (`index.html`, `app.js`).
+
+---
+
+**Coolifyâ€™a** bu deÄŸiÅŸikliklerden sonra yeniden deploy edip tarayÄ±cÄ±da **sert yenileme** (veya CDN Ã¶nbelleÄŸi varsa purge) yap.  
+
+Tesla/Chromiumâ€™da MSEâ€™nin AAC codecâ€™inde (`audio/mp4; codecs="mp4a.40.2"`) destek sÄ±k sorun Ã§Ä±karsa, fallback yÃ¼zÃ¼nden yeniden iki istek gÃ¶rÃ¼lÃ¼râ€”o zaman logâ€™ta uyarÄ± olarak dÃ¼ÅŸer; istersen sonraki adÄ±mda HE-AAC (`mp4a.40.5`) Ã¶n kontrolÃ¼nÃ¼ geniÅŸletebiliriz.
+
+Ä°stersen `git commit` + `push` da yazayÄ±m (TÃ¼rkÃ§e mesajla).
+
+
+## User - 2026-05-01 22:09:51
+
+video teknolojisinde bir ÅŸey deÄŸiÅŸtirmedik deÄŸil mi, unutma gÃ¶rÃ¼ntÃ¼ formatÄ± ile ilgili ÅŸeyleri deÄŸiÅŸtirmeyeceÄŸiz. teslanÄ±n hareket halindeyken videoyu engellememesi iÃ§in gereken dÃ¼zenlemelere dokunmayacaÄŸÄ±z 
+
+
+## Assistant - 2026-05-01 22:10:04
+
+Evet, **video teknolojisini** (kodecten oynatmaya kadar seÃ§tiÄŸimiz hat) Ã¶zellikle deÄŸiÅŸtirmedik.
+
+**AynÄ± kalanlar:**
+- YouTube Ã§Ä±kÄ±ÅŸÄ± hÃ¢lÃ¢ **progressive MP4**; yt-dlp / extract mantÄ±ÄŸÄ± olduÄŸu gibi.
+- **WebCodecs `VideoDecoder` + MP4Box + canvas (YT1)** ve **MJPEG/img (YT5)** ile `<video>` Ã¼zerinden oynatmÄ±yoruz; Teslaâ€™nÄ±n `<video>`/klasik oynatÄ±cÄ±yla ilgili kÄ±sÄ±tlarÄ±na dokunmak iÃ§in kullandÄ±ÄŸÄ±mÄ±z yaklaÅŸÄ±m **deÄŸiÅŸmedi**.
+- Videonun **formatÄ±nÄ±** (hangi kap, hangi kodecten extract) bilinÃ§li olarak baÅŸka bir ÅŸeye Ã§evirmedik.
+
+**DeÄŸiÅŸenler (videodan Ã§ok teslim / ses):**
+- AynÄ± dosyayÄ± iki kez indirmeyi azaltmak iÃ§in, uygun olduÄŸunda ses iÃ§in **aynÄ± baytlarÄ± MediaSourceâ€™a** yazma (fallbackâ€™te yine **`/audio`** ile eski davranÄ±ÅŸ).
+- Sunucuda yalnÄ±zca **`/stream` yanÄ±tlarÄ±nda GZipâ€™i atlama** (akÄ±ÅŸ iÃ§in ek tampon riski az olsun diye).
+
+MP4Boxâ€™a verilen tampon iÃ§in **`slice` ile kopya** kullanÄ±lÄ±yor; bu **iÃ§eriÄŸi/formatÄ± deÄŸiÅŸtirmez**, sadece iki tÃ¼keticiye gÃ¼venli paylaÅŸÄ±m iÃ§indir.
+
+Ã–zet: **GÃ¶rÃ¼ntÃ¼ formatÄ±na ve Teslaâ€™da hareket halinde engeli aÅŸmak iÃ§in seÃ§tiÄŸiniz â€œ`<video>` kullanmadan gÃ¶stermeâ€ mimarisine** bilerek dokunmadÄ±k; sadece **ses yayÄ±nÄ±nÄ± ve proxide sÄ±kÄ±ÅŸtÄ±rmayÄ±** iyileÅŸtirdik.
+
+
+## User - 2026-05-01 22:10:35
+
+repoyu gÃ¼ncelle
+
