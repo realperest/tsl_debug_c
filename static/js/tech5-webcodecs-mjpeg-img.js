@@ -47,6 +47,7 @@ export const TechModule = {
     _mseAudioMime: null,
     _mseQueue: [],
     _msePumpFinished: false,
+    _avResyncLastMs: 0,
 
     // Buffer Logic
     frameQueue: [],
@@ -260,6 +261,21 @@ export const TechModule = {
     _finalizeMseOnPumpDone() {
         this._msePumpFinished = true;
         this._pumpMseAppend();
+    },
+
+    _maybeResyncAudioToDecodedHead(headTsSec) {
+        if (!this.isPlaying || !Number.isFinite(headTsSec)) return;
+        const a = this.audio.currentTime || 0;
+        if (a <= headTsSec + 0.35) return;
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        if (this._avResyncLastMs && now - this._avResyncLastMs < 320) return;
+        this._avResyncLastMs = now;
+        const target = Math.max(0, headTsSec - 0.04);
+        try {
+            this.audio.currentTime = target;
+        } catch (e) {
+            log('warn', this.id, `A/V ses hizasi: ${e?.message || e}`);
+        }
     },
 
     _computeResumeAudioSyncTime(frameTsSec) {
@@ -485,6 +501,7 @@ export const TechModule = {
         this.audio.src = '';
         this._fallbackAudioUrl = null;
         this._hardTeardownUnifiedMse();
+        this._avResyncLastMs = 0;
         if (this.decoder) { try { this.decoder.close(); } catch(e) {} this.decoder = null; }
         if (this.mp4boxfile) { try { this.mp4boxfile.flush(); } catch(e) {} this.mp4boxfile = null; }
         this._syncStageOverlay();
@@ -716,14 +733,17 @@ export const TechModule = {
         const loop = () => {
             if (currentGen !== this.renderGen || !this.isPlaying) return;
             if (!this.isBuffering && this.frameQueue.length > 0) {
-                const masterTs = this.audio.currentTime;
+                const headTs = this.frameQueue[0].timestamp / 1_000_000;
+                this._maybeResyncAudioToDecodedHead(headTs);
+                const masterTs = this.audio.currentTime || 0;
+                const win = 0.22;
                 while (this.frameQueue.length > 0) {
                     const frame = this.frameQueue[0];
                     const frameTs = frame.timestamp / 1_000_000;
-                    if (frameTs < masterTs - 0.15) {
+                    if (frameTs < masterTs - win) {
                         this.frameQueue.shift().close();
                         continue;
-                    } else if (frameTs <= masterTs + 0.15) {
+                    } else if (frameTs <= masterTs + win) {
                         this._fitCanvasToFrame(frame);
                         this.ctx.drawImage(frame, 0, 0);
                         this._markSurfacePainted();

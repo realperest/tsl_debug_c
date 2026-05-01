@@ -1149,3 +1149,46 @@ MP4Boxâ€™a verilen tampon iÃ§in **`slice` ile kopya** kullanÄ±lÄ±yor;
 
 repoyu gÃ¼ncelle
 
+
+## Assistant - 2026-05-01 22:10:47
+
+GÃ¼ncelleme yapÄ±ldÄ±.
+
+**Commit:** `Canli A/V: birlesik MSE ses akisi, /stream icin GZip atla, unified_av_stream API, surum C 260501.0084`  
+**Dosyalar:** `app/main.py`, `app/routers/api.py`, `tech1-webcodecs-canvas2d.js`, `tech5-webcodecs-mjpeg-img.js`, `static/index.html`, `static/js/app.js`, `konusmalar/konusma01.md`  
+**Uzak dal:** `main` (`e989633` â†’ `c5d399d`) â†’ `https://github.com/realperest/tsl_debug_c`
+
+
+## User - 2026-05-01 22:23:21
+
+hala aynÄ± problem canlÄ± da, localde bÃ¶yle deÄŸil ama canlÄ± da garip bir ÅŸekilde hep kesiliyor gÃ¶rÃ¼ntÃ¼. ses devam ediyor ama gÃ¶rÃ¼ntÃ¼ hep takÄ±lÄ±yor. hani bizim ses ve gÃ¶rÃ¼ntÃ¼yÃ¼ eÅŸitleme gibi bir dÃ¼zenlememiz vardÄ± o neden canlÄ± da Ã§alÄ±ÅŸmÄ±yor
+
+
+## Assistant - 2026-05-01 22:24:16
+
+## Neden yerelde iyi, canlÄ±da kÃ¶tÃ¼?
+
+Senkron dÃ¼zenleme **Ã§alÄ±ÅŸÄ±yordu ama varsayÄ±mda hata vardÄ±**: oynatma dÃ¶ngÃ¼sÃ¼nde **ana saat her zaman `audio.currentTime`**.  
+
+CanlÄ±da (Ã¶zellikle MSE + daha yavaÅŸ hat / proxy) **ses tarafÄ± sÄ±k sÄ±f decode edilen videonun zamanÄ±nÄ±n Ã¶nÃ¼ne geÃ§iyor**. Kod da â€œgeÃ§ kalan kareyi atâ€ diyerek `frameTs < audio - 0.15` eÅŸiÄŸiyle **henÃ¼z gÃ¶sterilecek tÃ¼m kareleri** Ã§Ã¶pe atÄ±yor; ses normal ilerliyormuÅŸ gibi gÃ¶rÃ¼nÃ¼yor, **gÃ¶rÃ¼ntÃ¼ ise sÃ¼rekli kesik / donuk** kalÄ±yor. Yerelde gecikme az olduÄŸu iÃ§in bu fark hiss edilmiyordu.
+
+**Kodek, container veya `<video>` kullanmÄ±yoruz** yapÄ±sÄ± deÄŸiÅŸmedi; sadece **zamanlama** dÃ¼zeltildi.
+
+## Ne yaptÄ±k? (format / Tesla yolu yok)
+
+**YT1 ve YT2** (`tech1-webcodecs-canvas2d.js`, `tech5-webcodecs-mjpeg-img.js`):
+
+1. **`_maybeResyncAudioToDecodedHead`**: Kuyruktaki **bir sonraki gÃ¶sterilecek karenin zamanÄ±** ile ses arasÄ±nda **~0.35 snâ€™den fazla** fark varsa, **en fazla ~320 msâ€™de bir** `audio.currentTime`â€™Ä± gÃ¶rÃ¼ntÃ¼ kuyruÄŸunun baÅŸÄ±na yakÄ±n Ã§ekiyoruz (kÃ¼Ã§Ã¼k bir geri hizalama).
+2. Kare atlama / gÃ¶sterme penceresini **0.15 sn â†’ 0.22 sn** yaptÄ±k (ani titremeyi azaltmak iÃ§in).
+
+Rozet: **`C 260501.0085`**.
+
+CanlÄ±ya deploy + sert yenilemeden sonra tekrar dene. HÃ¢lÃ¢ takÄ±lÄ±yorsa bir sonraki adÄ±m, **sesi decode kuyruÄŸundan Ã§ok ileri gidince kÄ±sa sÃ¼reli `playbackRate < 1`** veya daha agresif ara tampon; Ã¶nce bu sÃ¼rÃ¼mÃ¼n tepkisine bakmak mantÄ±klÄ±.
+
+Ä°stersen **`git commit` + push** iÃ§in TÃ¼rkÃ§e mesaj da yazabilirim.
+
+
+## User - 2026-05-01 22:25:10
+
+repo gÃ¼ncelle
+

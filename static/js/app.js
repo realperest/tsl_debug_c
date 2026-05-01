@@ -365,7 +365,7 @@ async function init() {
 }
 
 function handleVersioning() {
-    const latestVersion = 'C 260501.0084';
+    const latestVersion = 'C 260501.0085';
     const viewedKey = 'tobetube_last_viewed';
     const lastViewed = localStorage.getItem(viewedKey);
     const versionEl = document.querySelector('.version-badge .latest');
