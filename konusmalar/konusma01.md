@@ -1450,3 +1450,55 @@ CanlÄ±da testte **sert yenileme** (veya deploy sonrasÄ± cache) ile **`C 2605
 
 repo
 
+
+## Assistant - 2026-05-01 22:55:28
+
+Push tamamlandÄ±.
+
+- **Uzaktaki depo:** `https://github.com/realperest/tsl_debug_c.git` â€” `main` â†’ `632e7f9`
+- **Commit:** `CanlÄ± A/V uyumu: sunum duvar saati (YT1/YT2), DIAG bypass kaldi; surum C 260501.0091`
+- **Dahil edilen dosyalar:** `tech1-webcodecs-canvas2d.js`, `tech5-webcodecs-mjpeg-img.js`, `app.js`, `index.html`, `konusmalar/konusma01.md`
+
+`konusmalar/konusma01.md` yerelde modified gÃ¶rÃ¼nÃ¼yordu; REP komutunda tÃ¼m Ã§alÄ±ÅŸma aÄŸacÄ± dahil edildi. Sadece o dosyayÄ± committen Ã§Ä±karmak istersen sÃ¶yle.
+
+
+## User - 2026-05-01 22:58:12
+
+hayÄ±r yine olmadÄ± 
+
+D:\KODLAMALAR\GITHUB\tsl_debug\tsl_debug_ag   bu klasÃ¶rde de Ã§ok benzer ÅŸekilde kodlamÄ±ÅŸtÄ±k projeyi.  o klasÃ¶rdeki ilgili dosya ve kodlarÄ± oku..... o klasÃ¶rdeki yayÄ±n canlÄ± da da sorunsuz akÄ±yor. ikisi arasÄ±ndaki farklarÄ± tespit et ve bu tarafta yapacaÄŸÄ±n iyileÅŸtirmeleri yap
+
+diÄŸer klasÃ¶r ve dosyalarda asla bir deÄŸiÅŸiklik yapma. sadece bu repo da deÄŸiÅŸiklik yapabilirsin
+
+
+## Assistant - 2026-05-01 22:59:15
+
+## tsl_debug_ag ile farklarÄ±n Ã¶zeti
+
+| Konu | `tsl_debug_ag` (referans) | `tsl_debug_c` (Ã¶nceki davranÄ±ÅŸ) |
+|------|---------------------------|----------------------------------|
+| Ses | Hep `/stream/.../audio` â†’ doÄŸrudan `<audio>` | AynÄ± YouTube akÄ±ÅŸÄ±nda `MediaSource`/MSE + birleÅŸik pump |
+| A/V seÃ§imi | `masterTs = audio.currentTime`, pencere **Â±0.15 s** | Sunum duvarÄ± + sÄ±k `currentTime` dÃ¼zeltmesi, **0.28 s** |
+| Fetch | `frameQueue.length > MAX_BUFFER` ise **100 ms bekleme** | Bu geri basÄ±nÃ§ kaldÄ±rÄ±lmÄ±ÅŸtÄ± |
+| Duraklat | `audio.pause` sonrasÄ± kuyruk baÅŸÄ± PTSâ€™ye **ses sÄ±fÄ±rÄ±** | Sadece `audio.currentTime` / yer imi |
+
+## Bu repoda yapÄ±lan deÄŸiÅŸiklikler (`tsl_debug_c` iÃ§inde)
+
+- **Unified MSE kapatÄ±ldÄ±:** Ses her zaman **`info.audio.url_path`** ile (agâ€™deki gibi doÄŸrudan `audio` Ã¶ÄŸesi). `unified_av_stream` gÃ¶nderilse bile MSE kullanÄ±lmÄ±yor (`_hardTeardownUnifiedMse()` + `_unifiedAv = false`).
+- **Oynatma dÃ¶ngÃ¼sÃ¼** tekrar **`audio.currentTime` Ã¼zerinden**, eÅŸik **0.15 s** (ag ile aynÄ±).
+- **`load` pumpâ€™a** geri **`MAX_BUFFER` aÅŸÄ±mÄ±nda `await â€¦ 100ms`** throttle eklendi.
+- **`pause`:** `audio.pause()` ve `renderGen` sonrasÄ±nda, **kuyrukta frame varsa** `audio.currentTime` kuyruk baÅŸÄ± PTSâ€™ye Ã§ekiliyor (ag). **Mp4Box `stop()` hÃ¢lÃ¢ yok** (Tesla iÃ§in bÄ±raktÄ±ÄŸÄ±nÄ±z dÃ¼zen).
+- **`_finalizeBufferAndStartSynced`:** Sunum-duvar (`_kickPresentationWall`), resume snapshot vb. Ã§Ä±karÄ±ldÄ±; sÃ¼re gÃ¶stergesi yine **`audio.currentTime`**.
+- YÃ¼klemede **`onReady` iÃ§indeki** MSE ses codec / `addSourceBuffer` dalÄ± da kapatÄ±ldÄ± (artÄ±k tetiklenmiyor).
+
+SÃ¼rÃ¼m: **`C 260501.0092`** (`app.js`, `index.html`).
+
+`tsl_debug_ag` iÃ§inde hiÃ§bir dosya deÄŸiÅŸtirilmedi.  
+
+**Not:** Video ve ses URLâ€™leri aynÄ± muxed dosyayÄ± iÅŸaret ettiÄŸinde tarayÄ±cÄ± **iki paralel progressive indirme** yapabilir; agâ€™ye uyum bÃ¶yle Ã§alÄ±ÅŸÄ±yor ve canlÄ± dÃ¼zgÃ¼n akmasÄ± iÃ§in yapÄ±lan tercih bu. GÃ¶nderimi istersen `repo` yazman yeterli.
+
+
+## User - 2026-05-01 22:59:41
+
+repo
+

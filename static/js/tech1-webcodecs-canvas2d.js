@@ -52,13 +52,6 @@ export const TechModule = {
     _mseQueue: [],
     _msePumpFinished: false,
 
-    /** Görüntü zamanlaması için ana saat: her çizilen kare PTS + performance.now; canlıda audio.currentTime geciktiginde bile kare seçilir. */
-    _mediaWallT0: null,
-    _mediaWallAnchorSec: 0,
-    _savedResumeMediaSec: null,
-    _audioSnapLastMs: 0,
-    _lastPresentedPtsSec: null,
-
     // Buffer Logic
     frameQueue: [],
     _isBuffering: false,
@@ -385,9 +378,7 @@ export const TechModule = {
 
     _updateProgress() {
         if (!this.duration) return;
-        const cur = this.isPlaying && this._mediaWallT0 !== null
-            ? this._presentationClockNow()
-            : (this.audio.currentTime || 0);
+        const cur = this.audio.currentTime || 0;
         const pct = Math.min((cur / this.duration) * 100, 100);
         const fill = document.getElementById(`progress-fill-${this.id}`);
         const thumb = document.getElementById(`progress-thumb-${this.id}`);
@@ -401,50 +392,6 @@ export const TechModule = {
     _fmt(sec) {
         const s = Math.floor(sec);
         return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-    },
-
-    _kickPresentationWall(ptsSec) {
-        if (!Number.isFinite(ptsSec)) return;
-        this._mediaWallAnchorSec = ptsSec;
-        this._mediaWallT0 = performance.now();
-        this._lastPresentedPtsSec = ptsSec;
-    },
-
-    _maxQueuedPtsSec() {
-        if (!this.frameQueue.length) return null;
-        let m = -Infinity;
-        for (let i = 0; i < this.frameQueue.length; i++) {
-            const s = this.frameQueue[i].timestamp / 1_000_000;
-            if (s > m) m = s;
-        }
-        return Number.isFinite(m) ? m : null;
-    },
-
-    /** Sunum zamanı (sn): görüntü ana saati; yerel/canlı tek kaynak için audio.currentTime degil duvar kullanilir. */
-    _presentationClockNow(nowMs = performance.now()) {
-        if (this._mediaWallT0 == null) {
-            const a = this.audio?.currentTime;
-            if (a != null && Number.isFinite(a)) return Math.max(0, a);
-            return Math.max(0, this._lastPresentedPtsSec || 0);
-        }
-        let t = this._mediaWallAnchorSec + (nowMs - this._mediaWallT0) / 1000;
-        const mx = this._maxQueuedPtsSec();
-        if (mx != null && Number.isFinite(mx)) t = Math.min(t, mx + 0.15);
-        return Math.max(0, t);
-    },
-
-    /** Ses yüzüklemeli kovalamaca; sık sık degil (>140ms) currentTime yakalar. */
-    _maybeSnapAudioToPresentation(nowMs = performance.now()) {
-        if (!this.isPlaying) return;
-        if (nowMs - this._audioSnapLastMs < 140) return;
-        const clock = this._presentationClockNow(nowMs);
-        const a = this.audio.currentTime || 0;
-        if (Math.abs(a - clock) > 0.35) {
-            this._audioSnapLastMs = nowMs;
-            try {
-                this.audio.currentTime = Math.max(0, clock);
-            } catch (e) {}
-        }
     },
 
     play() {
@@ -484,15 +431,19 @@ export const TechModule = {
 
     pause() {
         if (!this.isPlaying) return;
-        this._savedResumeMediaSec = this._presentationClockNow();
-        this._mediaWallT0 = null;
 
         this.isPlaying = false;
+        this.audio.pause();
+        this.renderGen++;
+        /** tsl_debug_ag ile ayni: bekleyen kuyruk başı PTS = ses zamanı (duraklat anı senkronda). Tesla: mp4box stop yapmıyoruz. */
+        if (this.frameQueue.length > 0) {
+            try {
+                this.audio.currentTime = this.frameQueue[0].timestamp / 1_000_000;
+            } catch (e) {}
+        }
         const t = this.audio.currentTime || 0;
         this.pauseBookmarkSec = t;
         this.pausedAtSec = t;
-        this.audio.pause();
-        this.renderGen++;
         if (this._resumeWatchdog) { clearTimeout(this._resumeWatchdog); this._resumeWatchdog = null; }
         // Soft-pause: MP4Box stop etme. Tesla'da stop→start bazen sample üretimini kilitliyor.
         if (this._progressRaf) { cancelAnimationFrame(this._progressRaf); this._progressRaf = null; }
@@ -501,9 +452,6 @@ export const TechModule = {
     },
 
     seek(timeSec, opts) {
-        this._mediaWallT0 = null;
-        this._savedResumeMediaSec = null;
-
         const fromResume = opts && opts.fromResume === true;
         if (this._resumeWatchdog) { clearTimeout(this._resumeWatchdog); this._resumeWatchdog = null; }
         if (this.isPlaying) this._spinnerUntilPrimed = true;
@@ -541,10 +489,6 @@ export const TechModule = {
         this._surfacePaintedOnce = false;
         this._needResyncOnPlay = false;
         if (this._resumeWatchdog) { clearTimeout(this._resumeWatchdog); this._resumeWatchdog = null; }
-        this._mediaWallT0 = null;
-        this._savedResumeMediaSec = null;
-        this._audioSnapLastMs = 0;
-        this._lastPresentedPtsSec = null;
         this.frameQueue.forEach(f => f.close());
         this.frameQueue = [];
         this.firstFrameSeen = false;
@@ -567,19 +511,16 @@ export const TechModule = {
         this._syncStageOverlay();
         this._msePumpFinished = false;
         this._mseQueue = [];
-        const unified = Boolean(info.unified_av_stream);
-        if (
-            unified
-            && typeof MediaSource !== 'undefined'
-            && typeof MediaSource.isTypeSupported === 'function'
-            && MediaSource.isTypeSupported('audio/mp4; codecs="mp4a.40.2"')
-        ) {
-            this._unifiedAv = true;
-            this._beginUnifiedMp4Audio(info);
-        } else if (info.audio && info.audio.url_path) {
-            this._unifiedAv = false;
-            this.audio.src = info.audio.url_path;
-            this.audio.load();
+        /** tsl_debug_ag ile ayni: Ses her zaman <audio> Progressive URL ile. Unified MSE aynı MP4 için currentTime/reporting canlı/Tesla uyumsuzluguna yol acıyordu. */
+        this._unifiedAv = false;
+        this._hardTeardownUnifiedMse();
+        if (info.audio && info.audio.url_path) {
+            try {
+                this.audio.src = info.audio.url_path;
+                this.audio.load();
+            } catch (e) {
+                log('warn', this.id, `Ses yuklemesi: ${e?.message || e}`);
+            }
         }
         try {
             this.mp4boxfile = MP4Box.createFile();
@@ -599,18 +540,6 @@ export const TechModule = {
                 });
                 this.decoder.configure(config);
                 this.isConfigured = true;
-                if (this._unifiedAv) {
-                    const ats = readyInfo.audioTracks || [];
-                    if (ats[0]) {
-                        const rawCodec = (ats[0].codec || 'mp4a.40.2').trim();
-                        const codec = /^[a-zA-Z0-9.]+$/.test(rawCodec) ? rawCodec : 'mp4a.40.2';
-                        this._mseAudioMime = `audio/mp4; codecs="${codec}"`;
-                    } else {
-                        log('warn', this.id, 'Birlesik akista ses izi yok; ayri ses baglantisi.');
-                        this._fallbackToSeparateAudioTrack();
-                    }
-                    this._attemptMseSourceBufferAttach();
-                }
                 for (const s of this.pendingSamples) this.sendSample(s);
                 this.pendingSamples = [];
                 const m = this.mp4boxfile.setExtractionConfig ? 'setExtractionConfig' : 'setExtractionOptions';
@@ -634,14 +563,15 @@ export const TechModule = {
                     const { value, done } = await reader.read();
                     if (done) {
                         this.mp4boxfile.flush();
-                        if (this._unifiedAv) this._finalizeMseOnPumpDone();
                         break;
                     }
                     const buf = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
                     buf.fileStart = offset;
                     offset += buf.byteLength;
                     this.mp4boxfile.appendBuffer(buf);
-                    if (this._unifiedAv) this._queueMseBytesFromReadable(value);
+
+                    /** tsl_debug_ag uyumu: kuyruk tasarsa pump’ı kısalt; dekoder/audio ile video zamanı yakın kalsın. */
+                    if (this.frameQueue.length > this.MAX_BUFFER) await new Promise(r => setTimeout(r, 100));
 
                     if (totalBytes > 0 && bufferBar) {
                         const pct = (offset / totalBytes) * 100;
@@ -709,16 +639,8 @@ export const TechModule = {
         this.isBuffering = false;
         const headPtsBefore = this.frameQueue[0].timestamp / 1_000_000;
 
-        let grabbedResume = null;
-        if (typeof this._savedResumeMediaSec === 'number' && Number.isFinite(this._savedResumeMediaSec)) {
-            grabbedResume = this._savedResumeMediaSec;
-            this._savedResumeMediaSec = null;
-        }
-
         const hadResumeClamp = typeof this._syncAudioCeilSec === 'number' && typeof this._syncAudioFloorSec === 'number';
-        const syncT = grabbedResume !== null
-            ? grabbedResume
-            : this._computeResumeAudioSyncTime(headPtsBefore);
+        const syncT = this._computeResumeAudioSyncTime(headPtsBefore);
 
         if (!this.firstFrameSeen) {
             try { this.audio.currentTime = syncT; } catch (e) {}
@@ -733,8 +655,6 @@ export const TechModule = {
         this._syncAudioCeilSec = null;
         if (hadResumeClamp) this.pauseBookmarkSec = 0;
         this._needResyncOnPlay = false;
-        /* Sunum duvarı = ekranda cizilen kare PTS'i (decode kuyrugu ile audio.currentTime ayrılınca bu kaynak doğru). */
-        this._kickPresentationWall(headPtsBefore);
         this._presentHeadFrameBeforeAudio();
         this._safeAudioPlay();
         this._spinnerUntilPrimed = false;
@@ -795,32 +715,28 @@ export const TechModule = {
 
     _startPlaybackLoop() {
         const currentGen = this.renderGen;
-        /** Çizilen karelere bağlı presentation clock kullanilir; yerel/canlı uyumu audio.currentTime’a bagimli degildir */
-        const WIN = 0.28;
+        /** tsl_debug_ag ile aynı: zaman ekseni doğrudan <audio>.currentTime, pencere 0.15s */
+        const WIN = 0.15;
 
         const loop = () => {
             if (currentGen !== this.renderGen || !this.isPlaying) return;
 
             if (!this.isBuffering && this.frameQueue.length > 0) {
-                const now = performance.now();
-                const clock = this._presentationClockNow(now);
-                this._maybeSnapAudioToPresentation(now);
-
+                const masterTs = this.audio.currentTime || 0;
                 while (this.frameQueue.length > 0) {
                     const frame = this.frameQueue[0];
                     const frameTs = frame.timestamp / 1_000_000;
 
-                    if (this.frameQueue.length > 1 && frameTs < clock - WIN) {
+                    if (this.frameQueue.length > 1 && frameTs < masterTs - WIN) {
                         this.frameQueue.shift().close();
                         continue;
                     }
-                    if (frameTs <= clock + WIN) {
+                    if (frameTs <= masterTs + WIN) {
                         this._fitCanvasToFrame(frame);
                         this.ctx.drawImage(frame, 0, 0);
                         this.frameQueue.shift().close();
                         this.frameCount++;
                         this._markSurfacePainted();
-                        this._kickPresentationWall(frameTs);
                         break;
                     }
                     break;
@@ -831,7 +747,6 @@ export const TechModule = {
                 if (!this.audio.ended && this.audio.readyState > 2) {
                    this.isBuffering = true;
                    this.audio.pause();
-                   this._mediaWallT0 = null;
                 }
             }
 
