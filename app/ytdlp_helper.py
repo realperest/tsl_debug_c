@@ -1,4 +1,6 @@
 import logging
+from typing import Optional, Tuple
+
 import yt_dlp
 
 logger = logging.getLogger(__name__)
@@ -67,34 +69,100 @@ def get_trending(limit: int = 24):
         
     return results
 
+
+def _video_audio_urls_from_info(info: dict) -> Tuple[Optional[str], Optional[str]]:
+    """
+    İstemci aynı imzalı progressive URL'e paralel iki HTTP baglantisi acarsa (MP4Box + <audio>),
+    CDN / imza / ara proxy canlı ortamda stream'i bozabilir. Mümkünse ayri youtube stream URL kullanilir.
+    """
+    req = info.get('requested_formats')
+    if isinstance(req, list):
+        v_url = None
+        a_url = None
+        for f in req:
+            vc_raw = str(f.get('vcodec') or '').lower()
+            ac_raw = str(f.get('acodec') or '').lower()
+            vc_none = vc_raw in ('', 'none')
+            ac_none = ac_raw in ('', 'none')
+            # Saf video izi veya görüntü taşıyan parça (DASH bazen iki parça döner)
+            if not vc_none and ac_none:
+                v_url = f.get('url') or v_url
+            elif not ac_none and vc_none:
+                a_url = f.get('url') or a_url
+        if v_url and a_url and v_url != a_url:
+            return v_url, a_url
+
+    merged = info.get('url')
+    if merged:
+        return merged, merged
+    if isinstance(req, list) and len(req) == 1 and req[0].get('url'):
+        u = req[0]['url']
+        return u, u
+    return None, None
+
+
 def extract(video_id: str):
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    opts = {
+    watch = f"https://www.youtube.com/watch?v={video_id}"
+    # Önce mümkünse ayri kalite uyumlu video+audio ID'leri; olmazsa tek parça progressive
+    opts_primary = {
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': True,
+        'nocheckcertificate': True,
+        'format': (
+            'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/'
+            'bestvideo[height<=480][ext=mp4]+bestaudio/'
+            'bestvideo[height<=480]+bestaudio/'
+            'best[ext=mp4][height<=480]/best[height<=480]/best'
+        ),
+    }
+    opts_fallback = {
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
         'nocheckcertificate': True,
         'format': 'best[ext=mp4][height<=480]/best[height<=480]/best',
     }
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        try:
-            info = ydl.extract_info(url, download=False)
-            video_url = info.get('url')
-            return {
-                'video_id': video_id,
-                'title': info.get('title'),
-                'duration': info.get('duration'),
-                'video': {
-                    'url': video_url,
-                    'codec': 'h264',
-                    'width': info.get('width', 1280),
-                    'height': info.get('height', 720),
-                },
-                'audio': {
-                    'url': video_url,
-                    'codec': 'aac',
-                },
-            }
-        except Exception as e:
-            logger.error(f"Extract hatası: {e}")
+    try:
+        with yt_dlp.YoutubeDL(opts_primary) as ydl:
+            info = ydl.extract_info(watch, download=False)
+
+        video_url, audio_url = _video_audio_urls_from_info(info)
+
+        if not video_url or not audio_url:
+            with yt_dlp.YoutubeDL(opts_fallback) as ydl:
+                info = ydl.extract_info(watch, download=False)
+            video_url, audio_url = _video_audio_urls_from_info(info)
+
+        if not video_url or not audio_url:
+            logger.error('Extract: ne birlesik ne ayrıştırılabilir URL uretildi')
             return None
+
+        width = info.get('width', 1280)
+        height = info.get('height', 720)
+
+        if video_url != audio_url:
+            logger.info('Extract: Ayri video ve ses URL kullanildi (tek URL ile cift baglanti riski yok)')
+        else:
+            logger.warning(
+                'Extract: Video ve ses aynı progressive URL — istemci cift paralel GET acacak (bazı ortamlarda riskli)'
+            )
+
+        return {
+            'video_id': video_id,
+            'title': info.get('title'),
+            'duration': info.get('duration'),
+            'video': {
+                'url': video_url,
+                'codec': 'h264',
+                'width': width,
+                'height': height,
+            },
+            'audio': {
+                'url': audio_url,
+                'codec': 'aac',
+            },
+        }
+    except Exception as e:
+        logger.error(f"Extract hatası: {e}")
+        return None

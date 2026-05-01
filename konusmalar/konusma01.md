@@ -1502,3 +1502,57 @@ SÃ¼rÃ¼m: **`C 260501.0092`** (`app.js`, `index.html`).
 
 repo
 
+
+## Assistant - 2026-05-01 22:59:56
+
+Push tamam.
+
+- **Branch:** `main` â†’ `1a6068e`
+- **Mesaj:** `tsl_debug_ag ile uyum: MSE birlesik kapali, audio senk 0.15s, pump geri basinci; surum C 260501.0092`
+- **Dosyalar:** `tech1-webcodecs-canvas2d.js`, `tech5-webcodecs-mjpeg-img.js`, `app.js`, `index.html`, `konusmalar/konusma01.md`
+
+
+## User - 2026-05-01 23:01:40
+
+yahÄ± yine olmadÄ± yine hatalÄ± yayÄ±n.... offf gerÃ§ek problem ne lÃ¼tfen iyice incele ve araÅŸtÄ±r artÄ±k Ã§Ã¶z problemi
+
+
+## Assistant - 2026-05-01 23:02:45
+
+## GerÃ§ek problem neydi?
+
+Sunucuda ve tarayÄ±cÄ±da **aynÄ± anda iki ayrÄ± HTTP isteÄŸi**, Ã§oÄŸu YouTube Ã§Ä±ktÄ±sÄ±nda **aynÄ± imzalÄ± progressive MP4 adresine** gidiyordu:
+
+1. **`fetch(info.video)`** â†’ MP4Box/WebCodecs  
+2. **`<audio src="info.audio">`** â†’ doÄŸrudan aynÄ± URL
+
+Backendâ€™de (`ytdlp_helper.py`) video ile ses hep **`info['url']`** ile tek adresteydi (`video_url == audio_url`). Yerelde daha toleranslÄ±, **CDN / Coolify proxy / sÄ±kÄ±ÅŸÄ±k aÄŸda** ise:
+
+- paralel baÄŸlantÄ±lardan biri kÄ±smen gelir ya da kopar  
+- **`Range`** davranÄ±ÅŸÄ± iki taraflÄ± Ã§eliÅŸebilir  
+- imzalÄ± URL bir oturumu â€œkirletirâ€  
+
+SonuÃ§: **donan gÃ¶rÃ¼ntÃ¼, akan ses**, aralÄ±klÄ± bozulma vb. Frontendâ€™de yaptÄ±ÄŸÄ±mÄ±z tÃ¼m oyuncu deÄŸiÅŸiklikleri bunun **yan etkisini** gizlemeye Ã§alÄ±ÅŸÄ±yordu; kÃ¶k ise **aynÄ± kaynaÄŸa Ã§ift paralel baÄŸlantÄ±** olduÄŸu iÃ§in sÄ±k sÄ±k toparlamÄ±yordu.
+
+Referans klasÃ¶rÃ¼ndeki **`ytdlp_helper` ile sizdekini yan yana kontrol ettim: ikisi de aynÄ± â€œtek URLâ€ yapÄ±sÄ±ndaydÄ±**; â€œagâ€™de Ã§alÄ±ÅŸÄ±yorâ€ daha Ã§ok iÃ§erik/ortam tesadÃ¼fÃ¼ veya farklÄ± daÄŸÄ±tÄ±m koÅŸulu olabilir; gÃ¼venilir Ã§Ã¶zÃ¼m backendâ€™den **ayÄ±k stream URLâ€™leri** vermektir.
+
+## Ne yaptÄ±m? (yalnÄ±zca `tsl_debug_c`)
+
+`app/ytdlp_helper.py` iÃ§inde **`extract`** yeniden yazÄ±ldÄ±:
+
+- Ã–nce yt-dlpâ€™den mÃ¼mkÃ¼nse **`bestvideo` + `bestaudio`** seÃ§iliyor (`requested_formats` iÃ§inden gerÃ§ekten **farklÄ±** `video` / `audio` URLâ€™leri).
+- BÃ¶yle Ã¶ncelik sÄ±rasÄ±nda **ayrÄ±** iki YouTube Ã§Ä±kÄ±ÅŸÄ± kullanÄ±lÄ±yor; istemci hÃ¢lÃ¢ `/stream/.../video` ve `/stream/.../audio` Ã¼zerinden gider ama arkada **farklÄ±** kaynak baÄŸlantÄ±lar aÃ§Ä±lmÄ±ÅŸ oluyor Ã§ift paralel **`aynÄ±`** URL sorunu ortadan kalkÄ±yor.
+- AyrÄ± format bulunamazsa Ã¶nceki gibi **`best[ext=mp4]` / `best`** ile **tek progressive** adresine dÃ¼ÅŸÃ¼lÃ¼yor (logâ€™a da yazÄ±lÄ±yor).
+- MantÄ±kta **H.264 + MP4** Ã¶nceliÄŸi korunuyor; WebCodecs AVC yolunun bozmamasÄ±na dikkat edildi.
+
+SÃ¼rÃ¼m rozeti: **`C 260501.0093`** (`app.js`, `index.html`).
+
+CanlÄ± deploy sonrasÄ± sunucu loglarÄ±nda **`Extract: Ayri video ve ses URL kullanildi`** satÄ±rÄ±nÄ± gÃ¶rmeyi bekleyebilirsin; bazÄ± kliplerde tek URL uyarÄ±sÄ± devam edebilir (Youtube yalnÄ±zca birleÅŸik format verdiyse).
+
+Push iÃ§in mesajÄ±na **`repo`** yazman yeterli.
+
+
+## User - 2026-05-01 23:03:10
+
+repo
+
