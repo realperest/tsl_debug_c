@@ -8,9 +8,6 @@ const YT_PAUSE_ICON_D = 'M8 19h3V5H8v14zm5-14v14h3V5h-3z';
 const YT_VOL_ICON_ON_D = 'M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z';
 const YT_VOL_ICON_OFF_D = 'M3 9v6h4l5 5V4L7 9H3zM17.75 5.03l1.22 1.22L7.62 21.61l-1.21-1.21z';
 
-/** GECICI TANI: true iken pause/resume/bookmark/mp4.seek yolu yok; kuyruk için min 1 kare; ilerleme cubuguna tiklayinca seek yapilmaz */
-const DIAG_BYPASS_PAUSE_RESUME = true;
-
 export const TechModule = {
     id: 'yt1',
     name: 'WebCodecs + Canvas 2D',
@@ -54,6 +51,13 @@ export const TechModule = {
     _mseAudioMime: null,
     _mseQueue: [],
     _msePumpFinished: false,
+
+    /** Görüntü zamanlaması için ana saat: her çizilen kare PTS + performance.now; canlıda audio.currentTime geciktiginde bile kare seçilir. */
+    _mediaWallT0: null,
+    _mediaWallAnchorSec: 0,
+    _savedResumeMediaSec: null,
+    _audioSnapLastMs: 0,
+    _lastPresentedPtsSec: null,
 
     // Buffer Logic
     frameQueue: [],
@@ -374,7 +378,6 @@ export const TechModule = {
 
     _onSeekClick(e, wrap) {
         if (!this.duration) return;
-        if (DIAG_BYPASS_PAUSE_RESUME) return;
         const rect = wrap.getBoundingClientRect();
         const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
         this.seek(ratio * this.duration);
@@ -382,7 +385,9 @@ export const TechModule = {
 
     _updateProgress() {
         if (!this.duration) return;
-        const cur = this.audio.currentTime;
+        const cur = this.isPlaying && this._mediaWallT0 !== null
+            ? this._presentationClockNow()
+            : (this.audio.currentTime || 0);
         const pct = Math.min((cur / this.duration) * 100, 100);
         const fill = document.getElementById(`progress-fill-${this.id}`);
         const thumb = document.getElementById(`progress-thumb-${this.id}`);
@@ -398,32 +403,52 @@ export const TechModule = {
         return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
     },
 
+    _kickPresentationWall(ptsSec) {
+        if (!Number.isFinite(ptsSec)) return;
+        this._mediaWallAnchorSec = ptsSec;
+        this._mediaWallT0 = performance.now();
+        this._lastPresentedPtsSec = ptsSec;
+    },
+
+    _maxQueuedPtsSec() {
+        if (!this.frameQueue.length) return null;
+        let m = -Infinity;
+        for (let i = 0; i < this.frameQueue.length; i++) {
+            const s = this.frameQueue[i].timestamp / 1_000_000;
+            if (s > m) m = s;
+        }
+        return Number.isFinite(m) ? m : null;
+    },
+
+    /** Sunum zamanı (sn): görüntü ana saati; yerel/canlı tek kaynak için audio.currentTime degil duvar kullanilir. */
+    _presentationClockNow(nowMs = performance.now()) {
+        if (this._mediaWallT0 == null) {
+            const a = this.audio?.currentTime;
+            if (a != null && Number.isFinite(a)) return Math.max(0, a);
+            return Math.max(0, this._lastPresentedPtsSec || 0);
+        }
+        let t = this._mediaWallAnchorSec + (nowMs - this._mediaWallT0) / 1000;
+        const mx = this._maxQueuedPtsSec();
+        if (mx != null && Number.isFinite(mx)) t = Math.min(t, mx + 0.15);
+        return Math.max(0, t);
+    },
+
+    /** Ses yüzüklemeli kovalamaca; sık sık degil (>140ms) currentTime yakalar. */
+    _maybeSnapAudioToPresentation(nowMs = performance.now()) {
+        if (!this.isPlaying) return;
+        if (nowMs - this._audioSnapLastMs < 140) return;
+        const clock = this._presentationClockNow(nowMs);
+        const a = this.audio.currentTime || 0;
+        if (Math.abs(a - clock) > 0.35) {
+            this._audioSnapLastMs = nowMs;
+            try {
+                this.audio.currentTime = Math.max(0, clock);
+            } catch (e) {}
+        }
+    },
+
     play() {
         if (this.isPlaying) return;
-
-        if (DIAG_BYPASS_PAUSE_RESUME) {
-            this.pauseBookmarkSec = 0;
-            this._syncAudioFloorSec = null;
-            this._syncAudioCeilSec = null;
-            this._needResyncOnPlay = false;
-            this.renderGen++;
-            this.isPlaying = true;
-            this._syncStageOverlay();
-            const bufNeed = 1;
-            this.isBuffering = this.frameQueue.length < bufNeed;
-            if (this.mp4boxfile) {
-                try { this.mp4boxfile.start(); } catch (e) {}
-            }
-            if (!this.isBuffering && this.frameQueue.length >= bufNeed) {
-                this._finalizeBufferAndStartSynced();
-            }
-            this._startPlaybackLoop();
-            this._updateProgress();
-            this._syncStageOverlay();
-            this.syncPlayButtonUi();
-            return;
-        }
-
         this.isPlaying = true;
         this._needResyncOnPlay = true;
         this._syncStageOverlay();
@@ -452,25 +477,15 @@ export const TechModule = {
             this._finalizeBufferAndStartSynced();
         }
         this._startPlaybackLoop();
+        this._updateProgress();
         this._syncStageOverlay();
         this.syncPlayButtonUi();
     },
 
     pause() {
         if (!this.isPlaying) return;
-
-        if (DIAG_BYPASS_PAUSE_RESUME) {
-            this.isPlaying = false;
-            this.pauseBookmarkSec = 0;
-            this.pausedAtSec = this.audio.currentTime || 0;
-            this.audio.pause();
-            this.renderGen++;
-            if (this._resumeWatchdog) { clearTimeout(this._resumeWatchdog); this._resumeWatchdog = null; }
-            if (this._progressRaf) { cancelAnimationFrame(this._progressRaf); this._progressRaf = null; }
-            this._syncStageOverlay();
-            this.syncPlayButtonUi();
-            return;
-        }
+        this._savedResumeMediaSec = this._presentationClockNow();
+        this._mediaWallT0 = null;
 
         this.isPlaying = false;
         const t = this.audio.currentTime || 0;
@@ -486,7 +501,9 @@ export const TechModule = {
     },
 
     seek(timeSec, opts) {
-        if (DIAG_BYPASS_PAUSE_RESUME) return;
+        this._mediaWallT0 = null;
+        this._savedResumeMediaSec = null;
+
         const fromResume = opts && opts.fromResume === true;
         if (this._resumeWatchdog) { clearTimeout(this._resumeWatchdog); this._resumeWatchdog = null; }
         if (this.isPlaying) this._spinnerUntilPrimed = true;
@@ -524,6 +541,10 @@ export const TechModule = {
         this._surfacePaintedOnce = false;
         this._needResyncOnPlay = false;
         if (this._resumeWatchdog) { clearTimeout(this._resumeWatchdog); this._resumeWatchdog = null; }
+        this._mediaWallT0 = null;
+        this._savedResumeMediaSec = null;
+        this._audioSnapLastMs = 0;
+        this._lastPresentedPtsSec = null;
         this.frameQueue.forEach(f => f.close());
         this.frameQueue = [];
         this.firstFrameSeen = false;
@@ -678,8 +699,7 @@ export const TechModule = {
             try { f.close(); } catch (e) {}
         }
 
-        const bufPrimed = DIAG_BYPASS_PAUSE_RESUME ? 1 : this.MIN_BUFFER;
-        if (this.isBuffering && this.frameQueue.length >= bufPrimed) {
+        if (this.isBuffering && this.frameQueue.length >= this.MIN_BUFFER) {
             this._finalizeBufferAndStartSynced();
         }
     },
@@ -687,9 +707,19 @@ export const TechModule = {
     _finalizeBufferAndStartSynced() {
         if (this.frameQueue.length === 0 || !this.isPlaying) return;
         this.isBuffering = false;
-        const frameTs = this.frameQueue[0].timestamp / 1_000_000;
+        const headPtsBefore = this.frameQueue[0].timestamp / 1_000_000;
+
+        let grabbedResume = null;
+        if (typeof this._savedResumeMediaSec === 'number' && Number.isFinite(this._savedResumeMediaSec)) {
+            grabbedResume = this._savedResumeMediaSec;
+            this._savedResumeMediaSec = null;
+        }
+
         const hadResumeClamp = typeof this._syncAudioCeilSec === 'number' && typeof this._syncAudioFloorSec === 'number';
-        const syncT = this._computeResumeAudioSyncTime(frameTs);
+        const syncT = grabbedResume !== null
+            ? grabbedResume
+            : this._computeResumeAudioSyncTime(headPtsBefore);
+
         if (!this.firstFrameSeen) {
             try { this.audio.currentTime = syncT; } catch (e) {}
             this.firstFrameSeen = true;
@@ -703,6 +733,8 @@ export const TechModule = {
         this._syncAudioCeilSec = null;
         if (hadResumeClamp) this.pauseBookmarkSec = 0;
         this._needResyncOnPlay = false;
+        /* Sunum duvarı = ekranda cizilen kare PTS'i (decode kuyrugu ile audio.currentTime ayrılınca bu kaynak doğru). */
+        this._kickPresentationWall(headPtsBefore);
         this._presentHeadFrameBeforeAudio();
         this._safeAudioPlay();
         this._spinnerUntilPrimed = false;
@@ -763,40 +795,32 @@ export const TechModule = {
 
     _startPlaybackLoop() {
         const currentGen = this.renderGen;
-        /** Ses raporu ile decode kuyrugu zamanı ayrılınca ilk kare yakılır ses ileriye gider; MSE'de seek bu rAF içinde hep yansımayabilir. */
+        /** Çizilen karelere bağlı presentation clock kullanilir; yerel/canlı uyumu audio.currentTime’a bagimli degildir */
         const WIN = 0.28;
-        const AHEAD = 0.32;
 
         const loop = () => {
             if (currentGen !== this.renderGen || !this.isPlaying) return;
 
             if (!this.isBuffering && this.frameQueue.length > 0) {
-                const headTs = this.frameQueue[0].timestamp / 1_000_000;
-                let masterTs = this.audio.currentTime || 0;
-
-                if (masterTs > headTs + AHEAD) {
-                    try {
-                        this.audio.currentTime = Math.max(0, headTs - 0.05);
-                    } catch (e) {}
-                    const after = this.audio.currentTime || 0;
-                    /* Hâlâ ileriyse seçim için saati görüntüye kilitle — aksi halde kare yakma döngüsü devam eder */
-                    masterTs = after > headTs + AHEAD ? headTs : after;
-                }
+                const now = performance.now();
+                const clock = this._presentationClockNow(now);
+                this._maybeSnapAudioToPresentation(now);
 
                 while (this.frameQueue.length > 0) {
                     const frame = this.frameQueue[0];
                     const frameTs = frame.timestamp / 1_000_000;
 
-                    if (this.frameQueue.length > 1 && frameTs < masterTs - WIN) {
+                    if (this.frameQueue.length > 1 && frameTs < clock - WIN) {
                         this.frameQueue.shift().close();
                         continue;
                     }
-                    if (frameTs <= masterTs + WIN) {
+                    if (frameTs <= clock + WIN) {
                         this._fitCanvasToFrame(frame);
                         this.ctx.drawImage(frame, 0, 0);
                         this.frameQueue.shift().close();
                         this.frameCount++;
                         this._markSurfacePainted();
+                        this._kickPresentationWall(frameTs);
                         break;
                     }
                     break;
@@ -807,6 +831,7 @@ export const TechModule = {
                 if (!this.audio.ended && this.audio.readyState > 2) {
                    this.isBuffering = true;
                    this.audio.pause();
+                   this._mediaWallT0 = null;
                 }
             }
 

@@ -1344,3 +1344,109 @@ Bu, **geri sarma yerine doÄŸrusal ilk oynatmada** sorunun pause/resume/seek ha
 
 repo
 
+
+## Assistant - 2026-05-01 22:41:45
+
+TamamdÄ±r.
+
+**Commit:** `Gecici tani: DIAG_BYPASS_PAUSE_RESUME (basit play/pause, seek kapali); surum C 260501.0088`  
+**Push:** `main` (`e5282d7` â†’ `c2c54d4`) â†’ `origin`
+
+
+## User - 2026-05-01 22:43:27
+
+hala aynÄ± sorun devam ediyor
+
+
+
+
+## Assistant - 2026-05-01 22:44:35
+
+## GerÃ§ek kÃ¶k neden (pause/DIAGâ€™tan baÄŸÄ±msÄ±z)
+
+Oynatma dÃ¶ngÃ¼sÃ¼nde ana zaman **`audio.currentTime`** idi ve bu deÄŸer, **sÄ±radaki `VideoFrame` PTSâ€™inden kÃ¼Ã§Ã¼k** kalabiliyor (Ã¶zellikle **MSE + canlÄ±**/ara proxy kombinasyonunda).  
+
+O zaman sÄ±radaki koÅŸul **`frameTs <= masterTs + pencere`** **hiÃ§** saÄŸlanmÄ±yor; dÃ¶ngÃ¼ sÃ¼rekli `break` ile Ã§Ä±kÄ±yor, **bir kez `_finalize`â€™da Ã§izilen ilk sahne sabit kalÄ±yor**, **ses** ise kendi zaman Ã§izgisinde **`currentTime`** ile yazÄ±lmÄ±ÅŸ sayaÃ§tan **iÅŸitilmeye/gÃ¶sterilmeye devam ediyordu.**
+
+Eski â€œses geride kalÄ±rsa headâ€™e Ã§ekâ€ mantÄ±ÄŸÄ± sadece **`masterTs > headTs`** kenarÄ±nÄ± dÃ¼zeltiyordu; **ses raporu arkada gÃ¶rÃ¼ntÃ¼ kuyruk baÅŸÄ±nÄ±n GERÄ°sinde olduÄŸunda decodeâ€™un Ã¶nÃ¼nde kalan kareleri** yakalayamÄ±yordu.
+
+## YapÄ±lan dÃ¼zeltme (`C 260501.0090`)
+
+- **`masterTs = Math.max(audio.currentTime, headTs)`** â€” Ã§izim referansÄ±nÄ± her iki kaynaÄŸÄ±n **Ã¼zerine kalacak ÅŸekilde** yÃ¼kseltiyoruz ki â€œsÄ±radaki PTS hep ileride kaldÄ±ÄŸÄ± iÃ§in tek karede kilitlenmeâ€ oluÅŸmasÄ±n.
+- Ses hÃ¢lÃ¢ **kuyruk baÅŸÄ±ndan belirgin biÃ§imde geri** ise (`audioT + AHEAD < headTs`): yine **`currentTime`**â€™Ä± kuyruk baÅŸÄ±na yakÄ±na Ã§ekeriz (`Math.max(after, headTs)` ile tutarlÄ± `masterTs`).
+
+**YT1 + YT2** aynÄ± ÅŸekilde gÃ¼ncellendi.
+
+Ekran gÃ¶rÃ¼ntÃ¼nde **`C 260501.0086`** gÃ¶rÃ¼nÃ¼yor â€” bu da **yÃ¼klenmiÅŸ sÃ¼rÃ¼mÃ¼n eski olduÄŸunu** gÃ¶steriyor; deploy/cache sonrasÄ±nda **`C 260501.0090`** gÃ¶rÃ¼p tekrar dene.
+
+Ä°stersen bir sonraki mesajÄ±nda **`repo`** yaz; TÃ¼rkÃ§e commit ile gÃ¶nderelim.
+
+
+## User - 2026-05-01 22:47:21
+
+peki ama localde neden uyumlu bir ÅŸekilde akÄ±yor ses ve gÃ¶rÃ¼ntÃ¼ , neden canlÄ± da problem asÄ±l sebep bu bence.... bunu dÃ¼ÅŸÃ¼n canlÄ± ve local neden farklÄ±
+
+localde dakika saniyeyi bir yere kaydediyormuyduk, yada benzeri bir kayÄ±t iÅŸlemi vb. yapÄ±yor muyduk
+
+
+## Assistant - 2026-05-01 22:47:33
+
+Kod tek: **aynÄ± JavaScript**. Yerelde dÃ¼zgÃ¼n gÃ¶rÃ¼nmesi ile canlÄ±da bozulmasÄ±nÄ±n nedeni Ã§oÄŸu zaman **aynÄ± zamanlama varsayÄ±mlarÄ± farklÄ± hÄ±zlarda kÄ±rÄ±lÄ±yor** olmasÄ±dÄ±r; yerelde yapÄ±lmÄ±ÅŸ **diskâ€™e zaman kaydÄ±**, localStorageâ€™ta sÃ¼re saklama gibi ekstra bir â€œyerel Ã¶zellikâ€ yok.
+
+## Yerelde uyumlu, canlÄ±da neden sÄ±k sÄ±k uyumsuz?
+
+1. **`audio.currentTime` ile decode edilen gÃ¶rÃ¼ntÃ¼ zamanÄ± iki ayrÄ± saat kaynaÄŸÄ± gibi davranÄ±r**  
+   Yerelde yÃ¼kleme gecikmesi kÃ¼Ã§Ã¼k, veri bloklarÄ± sÄ±k sÄ±k gelir, **`currentTime`** ile sÄ±radaki kare zamanÄ± (**PTS**) pratik olarak Ã¼st Ã¼ste biner â€” senkron penceresi (Ã¶rn. Â±0.28 sn) neredeyse hep tutar.
+
+2. **CanlÄ±da aynÄ± hatlar daha uzun ve daha deÄŸiÅŸken**  
+   Sunucuya + YouTubeâ€™a gidiÅŸâ€‘dÃ¶nÃ¼ÅŸ, Coolify/nginx tamponlarÄ±, sÄ±kÄ±ÅŸtÄ±rÄ±lmayan ama blok blok gelen baytlar yÃ¼zÃ¼nden:
+   - **Ses** bazen MSE/SourceBuffer iÃ§inde daha â€œiyi tamponluâ€ yerde zamanlar,
+   - **Video** decode sÄ±rasÄ±nda kuyruk ve **PTS** sÄ±rasÄ± farklÄ± anlarda dolar.  
+   Pencere hep kaÃ§arÄ±rsa â€œses ilerliyor gÃ¶rÃ¼ntÃ¼ donduâ€ oluÅŸur â€” **aynÄ± kod, daha bÃ¼yÃ¼k zaman kaymasÄ±**.
+
+3. **Bizim kullandÄ±ÄŸÄ±mÄ±z â€œbirleÅŸtirilmiÅŸ akÄ±ÅŸ + MSE + fetchâ€ kombinasyonu**  
+   Yerelde sÄ±k sÄ±k **iki paralel baÄŸlantÄ±nÄ±n** daha tutarlÄ± hissettirdiÄŸi anda; canlÄ±da **tek baÄŸlantÄ±nÄ±n** paylaÅŸÄ±mÄ± ve **`currentTime`**â€™Ä±n gÃ¼ncellenme anÄ± daha agresif sapan olabilir. Bu yÃ¼zden fark daha Ã§ok gÃ¶rÃ¼nÃ¼r.
+
+Ã–zet:** AsÄ±l kÃ¶k**, â€œbiz yerelde yanlÄ±ÅŸÄ± kaydediyoruz canlÄ± da yanlÄ±ÅŸÄ± okuyoruzâ€ deÄŸil; **aynÄ± mantÄ±kta iki saat kaynaÄŸÄ± (ses raporu Ã— video PTS) canlÄ±da daha sÄ±k kopuyor.**
+
+## â€œDakika/saniyeyi bir yere kaydediyor muyduk?â€ yerel Ã¶zel olarak
+
+HayÄ±r:
+
+- **`pauseBookmarkSec`**, **`pausedAtSec`** vb. **sadece bellek iÃ§i** (`TechModule` nesnesinde); baÅŸka kullanÄ±cÄ±, baÅŸka sekme iÃ§in deÄŸil, **aynÄ± oturumdaki pause/resume** iÃ§in.
+- **LocalStorage** ile oynatma sÃ¼resi senkron saklamÄ±yoruz â€” **sunucunun localâ€™inden canlÄ±sÄ±ndan daha farklÄ± bir â€œkayÄ±tlÄ± zamanâ€ kullanÄ±lmÄ±yor**.
+- **Ä°lerleme Ã§ubuÄŸundaki 0:08** gibi deÄŸer, **`audio.currentTime`** ile Ã§izilir; kod her yerde aynÄ±dÄ±r.
+
+CanlÄ±yla yerel davranÄ±ÅŸ farkÄ±nÄ±n **Ã¶zeti**: **aynÄ± kayÄ±tlar yok**, farklÄ± olan **aÄŸ/OS tarayÄ±cÄ± zamanlamasÄ±**; bu yÃ¼zden **senkron eÅŸikleri ve iki saati birbirine baÄŸlama** daha kritik oluyor.
+
+
+## User - 2026-05-01 22:49:03
+
+tamam Ã§Ã¶z problemi lÃ¼tfen. aklÄ±na ilk geleni yapma etraflÄ±ca dÃ¼ÅŸÃ¼n
+
+
+## Assistant - 2026-05-01 22:51:09
+
+## Ne yaptÄ±m
+
+**Problem:** CanlÄ± ortamda MSE/audio `currentTime` ile decode kuyruÄŸunun PTS zamanÄ± sÄ±k sÄ±k uyumsuzlaÅŸÄ±nca seÃ§im hep `audio`-a gÃ¶re kaldÄ±ÄŸÄ± iÃ§in **doÄŸru kare hiÃ§ â€œvadesi dolmuÅŸâ€ sayÄ±lmÄ±yor**, ekranda tek kare kalÄ±yor, ses ise akÄ±yordu.
+
+**Ã‡Ã¶zÃ¼m (YT1 ve YT2):**
+
+1. **`DIAG_BYPASS_PAUSE_RESUME`** tamamen kaldÄ±rÄ±ldÄ±; yeniden tam **pause/resume**, **bookmark** ve **seek** davranÄ±ÅŸÄ± geÃ§erli.
+2. **Sunum duvar saati (`performance.now`):** Her Ã§izilen kare PTSâ€™sine gÃ¶re `_kickPresentationWall` ile anchor atanÄ±r; oynatma dÃ¶ngÃ¼sÃ¼nde seÃ§im **`_presentationClockNow()`** ile yapÄ±lÄ±r (`audio.currentTime` master deÄŸil).
+3. **`_presentationClockNow`:** Duvar kapalÄ±ysa gÃ¼venlik iÃ§in ses veya `_lastPresentedPtsSec`; aÃ§Ä±ksa PTS + sÃ¼re â†’ kuyruktaki maks PTSâ€™yi hafif aÅŸÄ±rÄ± sÃ¼rmeyle kÄ±sÄ±tlar (~0.15 sn).
+4. **`_maybeSnapAudioToPresentation`:** (>140â€¯ms diliminde) ses ile sunum duvarÄ± >0.35â€¯sn saparsa **`audio.currentTime`** yumuÅŸak dÃ¼zeltme (grafik seÃ§iminden baÄŸÄ±msÄ±z).
+5. **Pause:** Durdurma anÄ±nda duvar zamanÄ± **`_savedResumeMediaSec`** iÃ§ine alÄ±nÄ±yor; buffer bitince **`_finalizeBufferAndStartSynced`** bunu **`syncT`** iÃ§in kullanÄ±p tÃ¼ketiyor. **Finalize** iÃ§in duvar sÄ±fÄ±rÄ± zamanÄ± her zaman **gÃ¶sterilen kuyruk baÅŸÄ± PTS (`headPtsBefore`)** ile eÅŸleniyor (sessiz/gÃ¶rÃ¼nÃ¼r kayma yok).
+6. **Seek / reset:** Duvar ve snapshot alanlarÄ± sÄ±fÄ±rlanÄ±yor.
+7. **SÃ¼rÃ¼m:** `C 260501.0091` â€” `static/js/app.js` ve `static/index.html`.
+
+DeÄŸiÅŸen dosyalar: `tech1-webcodecs-canvas2d.js`, `tech5-webcodecs-mjpeg-img.js`, `app.js`, `index.html`.
+
+CanlÄ±da testte **sert yenileme** (veya deploy sonrasÄ± cache) ile **`C 260501.0091`** rozetini doÄŸrula. Gitâ€™e gÃ¶ndermek iÃ§in mesajÄ±nda **`repo`** yazman yeterli (TÃ¼rkÃ§e commit kuralÄ±n geÃ§erli).
+
+
+## User - 2026-05-01 22:55:08
+
+repo
+
