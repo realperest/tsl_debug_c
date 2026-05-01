@@ -8,6 +8,9 @@ const YT_PAUSE_ICON_D = 'M8 19h3V5H8v14zm5-14v14h3V5h-3z';
 const YT_VOL_ICON_ON_D = 'M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z';
 const YT_VOL_ICON_OFF_D = 'M3 9v6h4l5 5V4L7 9H3zM17.75 5.03l1.22 1.22L7.62 21.61l-1.21-1.21z';
 
+/** GECICI TANI: true iken pause/resume/bookmark/mp4.seek yolu yok; kuyruk için min 1 kare; ilerleme cubuguna tiklayinca seek yapilmaz */
+const DIAG_BYPASS_PAUSE_RESUME = true;
+
 export const TechModule = {
     id: 'yt1',
     name: 'WebCodecs + Canvas 2D',
@@ -371,6 +374,7 @@ export const TechModule = {
 
     _onSeekClick(e, wrap) {
         if (!this.duration) return;
+        if (DIAG_BYPASS_PAUSE_RESUME) return;
         const rect = wrap.getBoundingClientRect();
         const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
         this.seek(ratio * this.duration);
@@ -396,6 +400,30 @@ export const TechModule = {
 
     play() {
         if (this.isPlaying) return;
+
+        if (DIAG_BYPASS_PAUSE_RESUME) {
+            this.pauseBookmarkSec = 0;
+            this._syncAudioFloorSec = null;
+            this._syncAudioCeilSec = null;
+            this._needResyncOnPlay = false;
+            this.renderGen++;
+            this.isPlaying = true;
+            this._syncStageOverlay();
+            const bufNeed = 1;
+            this.isBuffering = this.frameQueue.length < bufNeed;
+            if (this.mp4boxfile) {
+                try { this.mp4boxfile.start(); } catch (e) {}
+            }
+            if (!this.isBuffering && this.frameQueue.length >= bufNeed) {
+                this._finalizeBufferAndStartSynced();
+            }
+            this._startPlaybackLoop();
+            this._updateProgress();
+            this._syncStageOverlay();
+            this.syncPlayButtonUi();
+            return;
+        }
+
         this.isPlaying = true;
         this._needResyncOnPlay = true;
         this._syncStageOverlay();
@@ -430,6 +458,20 @@ export const TechModule = {
 
     pause() {
         if (!this.isPlaying) return;
+
+        if (DIAG_BYPASS_PAUSE_RESUME) {
+            this.isPlaying = false;
+            this.pauseBookmarkSec = 0;
+            this.pausedAtSec = this.audio.currentTime || 0;
+            this.audio.pause();
+            this.renderGen++;
+            if (this._resumeWatchdog) { clearTimeout(this._resumeWatchdog); this._resumeWatchdog = null; }
+            if (this._progressRaf) { cancelAnimationFrame(this._progressRaf); this._progressRaf = null; }
+            this._syncStageOverlay();
+            this.syncPlayButtonUi();
+            return;
+        }
+
         this.isPlaying = false;
         const t = this.audio.currentTime || 0;
         this.pauseBookmarkSec = t;
@@ -444,6 +486,7 @@ export const TechModule = {
     },
 
     seek(timeSec, opts) {
+        if (DIAG_BYPASS_PAUSE_RESUME) return;
         const fromResume = opts && opts.fromResume === true;
         if (this._resumeWatchdog) { clearTimeout(this._resumeWatchdog); this._resumeWatchdog = null; }
         if (this.isPlaying) this._spinnerUntilPrimed = true;
@@ -635,7 +678,8 @@ export const TechModule = {
             try { f.close(); } catch (e) {}
         }
 
-        if (this.isBuffering && this.frameQueue.length >= this.MIN_BUFFER) {
+        const bufPrimed = DIAG_BYPASS_PAUSE_RESUME ? 1 : this.MIN_BUFFER;
+        if (this.isBuffering && this.frameQueue.length >= bufPrimed) {
             this._finalizeBufferAndStartSynced();
         }
     },

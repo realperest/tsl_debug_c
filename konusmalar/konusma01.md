@@ -1291,3 +1291,56 @@ CanlÄ±da **`C 260501.0087`** gÃ¶rÃ¼nce sert yenile + tekrar dene. Tutmazsa
 
 repo
 
+
+## Assistant - 2026-05-01 22:37:30
+
+TamamlandÄ±.
+
+**Commit:** `Donmus goruntu/ses uyumsuzluguna gercek kok: playback master Ts kilidi, tek kareden drop yok; surum C 260501.0087`  
+**Push:** `main` â†’ `origin` (`549e758` â†’ `e5282d7`)
+
+
+## User - 2026-05-01 22:40:12
+
+olmuuyor gÃ¶rÃ¼ntÃ¼ sabit ses akÄ±yor.  lÃ¼tfen gerÃ§ek Ã§Ã¶zÃ¼mÃ¼ bulalÄ±m.
+
+pause, resume kontrolÃ¼nÃ¼ bypass edelim geÃ§ici olarak en basit haliyle aksÄ±n bakalÄ±m ses ve gÃ¶rÃ¼ntÃ¼ ne olacak
+
+
+## Assistant - 2026-05-01 22:41:17
+
+## Ne yaptÄ±k?
+
+Ä°stediÄŸin gibi **pause / resume karmaÅŸasÄ± geÃ§ici olarak devre dÄ±ÅŸÄ±** (`DIAG_BYPASS_PAUSE_RESUME = true`):
+
+`satic/js/tech1-webcodecs-canvas2d.js` ve `static/js/tech5-webcodecs-mjpeg-img.js` dosyalarÄ±nÄ±n tepesinde bu sabit var.
+
+**Bypass aÃ§Ä±kken:**
+
+| Eskisi | Åimdi |
+|--------|--------|
+| Pauseâ€™tan sonra yer imi â†’ resumeâ€™da `seek` | **Bookmark yok**, `pauseBookmarkSec` sÄ±fÄ±rlanÄ±yor |
+| `play()` iÃ§inde `_needResyncOnPlay` ile ek senkron | **KapalÄ±** |
+| Ses/hazÄ±r iÃ§in genelde **10 kare** bekleme | **`onFrame`** ve ilk `play` iÃ§in **1 kare** yeter |
+| Ä°lerleme Ã§ubuÄŸu â†’ `seek` | **`seek()` Ã§aÄŸrÄ±lmÄ±yor** (`_onSeekClick` / doÄŸrudan `seek` no-op) |
+| `pause()` | Sadece `isPlaying = false`, `audio.pause()`, `renderGen++` â€” **bookmark yazÄ±lmÄ±yor** |
+
+`play()` tanÄ±moda ayrÄ±ca **`_updateProgress()`** baÅŸlatÄ±lÄ±yor ki sÃ¼re Ã§ubuÄŸu zaman damgasÄ± doÄŸru aksÄ±n.
+
+Bu, **geri sarma yerine doÄŸrusal ilk oynatmada** sorunun pause/resume/seek hattÄ±ndan mÄ± yoksa baÅŸka yerden mi geldiÄŸini ayÄ±rman iÃ§in.
+
+**SÃ¼rÃ¼m:** `C 260501.0088`
+
+**Geriye dÃ¶nmek iÃ§in:** iki dosyada `DIAG_BYPASS_PAUSE_RESUME` deÄŸerini **`false`** yapman yeterli.
+
+---
+
+Åunu net sÃ¶yleyeyim: HÃ¢lÃ¢ **gÃ¶rÃ¼ntÃ¼ donuyor ses akÄ±yorsa**, sorun pause/resume deÄŸil; bir sonraki aday **MSE + `audio.currentTime` ile gÃ¶rÃ¼ntÃ¼ seÃ§im kodu / birleÅŸtirilmiÅŸ akÄ±ÅŸ** tarafÄ±nda olur. Bu tanÄ± Ã¶zellikle onu doÄŸrulamak iÃ§in.
+
+Ä°stersen yaz **`repo`** dersen commit + push yaparÄ±m (TÃ¼rkÃ§e mesajla).
+
+
+## User - 2026-05-01 22:41:31
+
+repo
+
