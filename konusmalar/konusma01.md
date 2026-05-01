@@ -998,3 +998,33 @@ tamam ÅŸimdi aynÄ± isimli bir repo oluÅŸtur githup da
 
 ve bu klasÃ¶rle eÅŸitle. 
 
+
+## Assistant - 2026-05-01 21:32:05
+
+Ä°ÅŸlem tamam.
+
+## YapÄ±lanlar
+
+1. **`.gitignore`** eklendi: `.env`, sanal ortamlar, `__pycache__`, `.runtime/`, loglar, `konusmalar/.locks/` â€” bÃ¶ylece `.env` GitHubâ€™a gitmedi.
+2. **`git init`** (dal: `main`), ilk commit: *"Ä°lk yÃ¼kleme: TobeTube FastAPI, statik arayÃ¼z ve daÄŸÄ±tÄ±m dosyalarÄ±"*.
+3. **`gh repo create`** ile **public** repo aÃ§Ä±ldÄ± ve `origin` olarak baÄŸlandÄ±; **`main`** itildi.
+
+## Repo adresi
+
+**https://github.com/realperest/tsl_debug_c**
+
+Hesap: **realperest** (CLIâ€™de oturum aÃ§Ä±k olan kullanÄ±cÄ±).
+
+---
+
+Bundan sonra yerelde deÄŸiÅŸiklik yaptÄ±ÄŸÄ±nda eÅŸitlemek iÃ§in:
+
+`git add -A`, `git commit -m "mesaj"`, `git push`
+
+Ã–zel (private) yapmak istersen GitHubâ€™da repo ayarlarÄ±ndan deÄŸiÅŸtirebilir veya yeniden oluÅŸturma gerekmez.
+
+
+## User - 2026-05-01 21:43:28
+
+repoyu push et
+
