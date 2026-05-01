@@ -51,8 +51,6 @@ export const TechModule = {
     _mseAudioMime: null,
     _mseQueue: [],
     _msePumpFinished: false,
-    /** Ses decode kuyrugunun onunde kostugunda gereksiz kare silmeyi onlemek icin currentTime throttle */
-    _avResyncLastMs: 0,
 
     // Buffer Logic
     frameQueue: [],
@@ -265,26 +263,6 @@ export const TechModule = {
     _finalizeMseOnPumpDone() {
         this._msePumpFinished = true;
         this._pumpMseAppend();
-    },
-
-    /**
-     * Canlı / yüksek gecikmede <audio> (MSE veya ikinci bağlantı) sık sık decode’un önünde olur.
-     * master olarak hep audio.currentTime kullanılırsa sıradaki videolar “çok geride” sanılıp yakılır → donmuş görüntü.
-     * Kuyruk başı ile ses farkı büyüdüyse sesi kısıtlı sıklıkla geri çeker (format değişmez).
-     */
-    _maybeResyncAudioToDecodedHead(headTsSec) {
-        if (!this.isPlaying || !Number.isFinite(headTsSec)) return;
-        const a = this.audio.currentTime || 0;
-        if (a <= headTsSec + 0.35) return;
-        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-        if (this._avResyncLastMs && now - this._avResyncLastMs < 320) return;
-        this._avResyncLastMs = now;
-        const target = Math.max(0, headTsSec - 0.04);
-        try {
-            this.audio.currentTime = target;
-        } catch (e) {
-            log('warn', this.id, `A/V ses hizasi: ${e?.message || e}`);
-        }
     },
 
     _computeResumeAudioSyncTime(frameTsSec) {
@@ -513,7 +491,6 @@ export const TechModule = {
         this.audio.src = '';
         this._fallbackAudioUrl = null;
         this._hardTeardownUnifiedMse();
-        this._avResyncLastMs = 0;
         if (this.decoder) { try { this.decoder.close(); } catch(e) {} this.decoder = null; }
         if (this.mp4boxfile) { try { this.mp4boxfile.flush(); } catch(e) {} this.mp4boxfile = null; }
         this._syncStageOverlay();
@@ -742,32 +719,43 @@ export const TechModule = {
 
     _startPlaybackLoop() {
         const currentGen = this.renderGen;
+        /** Ses raporu ile decode kuyrugu zamanı ayrılınca ilk kare yakılır ses ileriye gider; MSE'de seek bu rAF içinde hep yansımayabilir. */
+        const WIN = 0.28;
+        const AHEAD = 0.32;
+
         const loop = () => {
             if (currentGen !== this.renderGen || !this.isPlaying) return;
 
             if (!this.isBuffering && this.frameQueue.length > 0) {
                 const headTs = this.frameQueue[0].timestamp / 1_000_000;
-                this._maybeResyncAudioToDecodedHead(headTs);
-                const masterTs = this.audio.currentTime || 0;
-                const win = 0.22;
+                let masterTs = this.audio.currentTime || 0;
+
+                if (masterTs > headTs + AHEAD) {
+                    try {
+                        this.audio.currentTime = Math.max(0, headTs - 0.05);
+                    } catch (e) {}
+                    const after = this.audio.currentTime || 0;
+                    /* Hâlâ ileriyse seçim için saati görüntüye kilitle — aksi halde kare yakma döngüsü devam eder */
+                    masterTs = after > headTs + AHEAD ? headTs : after;
+                }
+
                 while (this.frameQueue.length > 0) {
                     const frame = this.frameQueue[0];
                     const frameTs = frame.timestamp / 1_000_000;
-                    
-                    // Yumuşak Senkronizasyon (Soft Sync)
-                    if (frameTs < masterTs - win) {
+
+                    if (this.frameQueue.length > 1 && frameTs < masterTs - WIN) {
                         this.frameQueue.shift().close();
                         continue;
-                    } else if (frameTs <= masterTs + win) {
+                    }
+                    if (frameTs <= masterTs + WIN) {
                         this._fitCanvasToFrame(frame);
                         this.ctx.drawImage(frame, 0, 0);
                         this.frameQueue.shift().close();
                         this.frameCount++;
                         this._markSurfacePainted();
                         break;
-                    } else {
-                        break;
                     }
+                    break;
                 }
             }
 

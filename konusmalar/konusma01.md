@@ -1242,3 +1242,52 @@ CanlÄ±ya bu sÃ¼rÃ¼mle deploy et + sert yenileme. Bunun arkasÄ± gelecek i
 
 repo
 
+
+## Assistant - 2026-05-01 22:31:58
+
+Ä°ÅŸlem tamam.
+
+**Commit:** `fetch akisinda frameQueue temelli uyku kaldirildi; canli goruntu kopmasi kok nedeni giderildi, surum C 260501.0086`  
+**Push:** `main` â†’ `origin` (`9b76328` â†’ `549e758`)
+
+
+## User - 2026-05-01 22:34:51
+
+hayÄ±r bak ekran gÃ¶rÃ¼ntÃ¼sÃ¼nde gÃ¶rdÃ¼ÄŸÃ¼n gÃ¶rÃ¼ntÃ¼ ilk saniye gÃ¶rÃ¼ntÃ¼sÃ¼ ama orada kalÄ±yor gÃ¶rÃ¼ntÃ¼ ses ise devam ediyor. Ã¶nce bunu anlayÄ±p dÃ¼zeltelim. aynÄ± zamanda pause yapÄ±p tekrar biraz bekleyip resume yapÄ±nca o resume dÃ¶nÃ¼ÅŸÃ¼ndeki yine tam o saniyedeki gÃ¶rÃ¼ntÃ¼ gÃ¶rÃ¼nÃ¼yor ama oynamÄ±yor donmuÅŸ ÅŸekilde gÃ¶rÃ¼nÃ¼yor. ses yine devam ediyor
+
+
+## Assistant - 2026-05-01 22:37:12
+
+## Ne oluyordu? (GerÃ§ek mekanizma)
+
+1. **`audio.currentTime`** Ã§ubukta olduÄŸu gibi (**0:08**) ilerliyor; **decode kuyruÄŸunun baÅŸÄ±** ise daha geride (**~0â€“1 saniye**) kalÄ±yor â€” MSEâ€™nin sÄ±k sÄ±k oluÅŸturduÄŸu durum budur.
+
+2. Oynatma dÃ¶ngÃ¼sÃ¼ **â€œanÄ±nda uyum iÃ§inâ€ `audio.currentTime`â€™Ä± tek hakikat** sanÄ±yordu. Ses **sÄ±rf rapor olarak** kuyruk baÅŸÄ±nÄ±n **â‰¥0.3 sn Ã¶nÃ¼nde** olduÄŸunda, **her kareyi** `frameTs < master âˆ’ 0.22` ile **â€œÃ§ok geÃ§â€** deyip **yakÄ±yordu**.
+   - KÃ¼Ã§Ã¼k gecikebilmiÅŸ `currentTime` + **tek kalan kare bile** yakÄ±labiliyordu â†’ sÃ¼rekli yakma.
+
+3. Eski **`_maybeResyncAudioToDecodedHead`** ise **320 ms throttle** yÃ¼zÃ¼nden yetiÅŸemiyor ve daha Ã¶nemlisi **`audio.currentTime = â€¦`** atamasÄ± Ã¶zellikle **MSE** tarafÄ±nda **aynÄ± animation frame iÃ§inde gÃ¼ncellenmeyebildiÄŸi** iÃ§in, tam hemen ardÄ±ndan okunan **`masterTs` eski kalÄ±yordu** â†’ yakma devam â†’ ** gÃ¶rÃ¼ntÃ¼ ilk/hatalÄ± sahneye kilit**, ** ses normal**.
+
+4. Pause / resume bazen **bir anlÄ±k doÄŸru zamana sÄ±Ã§ratÄ±yor** ama yine **`masterTs` yanlÄ±ÅŸ** kalÄ±nca dÃ¶ngÃ¼ yine **`frameTs <= masterTs + WIN` kutusundan Ã§Ä±kamÄ±yor** veya yakÄ±lmÄ±ÅŸ kuyrukla **yeniden donuyorsun.**
+
+Video formatÄ± decode hattÄ±na dokunulmadÄ± â€” sadece **zamanlama ve yakma politikasÄ±.**
+
+## Ne yaptÄ±m? (**C 260501.0087**)
+
+- Ses kuyruk baÅŸÄ±ndan **nett biÃ§imde ileriye fÄ±rlarsa**: Ã¶nce **`currentTime`**â€™Ä± kuyruk baÅŸÄ±na Ã§ek (`seek`).
+- HÃ¢lÃ¢ rapor olarak ileriyorsa (**MSE**) bu kare seÃ§iminde **`masterTs`**â€™yi **`headTs`**â€™e **kÄ±r** â€” bÃ¶ylece **hiÃ§ yakmadan**, elde olan karenin zamanÄ±na gÃ¶re **Ã§izilir**.
+- **`frameTs < master âˆ’ WIN` ile yakma**: yalnÄ±zca **`frameQueue.length > 1`** iken (son kare gÃ¼vende).
+- Geciken ve **iÅŸe yaramayan** throttleâ€™lÄ± `_maybeResyncâ€¦` kodu **kaldÄ±rÄ±ldÄ±.**
+
+**YT1 + YT2** aynÄ± mantÄ±kta.
+
+---
+
+CanlÄ±da **`C 260501.0087`** gÃ¶rÃ¼nce sert yenile + tekrar dene. Tutmazsa sonraki adÄ±m `isBuffering` + boÅŸ kuyruk dalÄ±nda **`audio.pause()`** ile uyumsuz davranÄ±ÅŸ veya **`requestVideoFrameCallback`** var mÄ± bakmak olur â€” ama ÅŸu blok **donmuÅŸ ilk kare + ilerleyen sÃ¼re Ã§ubuÄŸu** tipik imzayÄ± doÄŸrudan aÃ§Ä±klÄ±yor.
+
+Ä°stersen **`repo`** yaz, commit + push yapayÄ±m (TÃ¼rkÃ§e mesajla).
+
+
+## User - 2026-05-01 22:37:15
+
+repo
+
